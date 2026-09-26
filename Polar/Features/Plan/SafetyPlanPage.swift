@@ -53,10 +53,15 @@ struct SafetyPlanPage: View {
         }
     }
 
+    private struct CallTarget: Identifiable {
+        let id = UUID()
+        let title: String
+        let digits: String
+    }
+
     private func callButtons(_ plan: SafetyPlan) -> some View {
-        let buttons = callTargets(plan)
-        return LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-            ForEach(buttons, id: \.title) { target in
+        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+            ForEach(callTargets(plan)) { target in
                 if let url = URL(string: "tel:\(target.digits)") {
                     Link(destination: url) {
                         Text(target.title)
@@ -70,21 +75,17 @@ struct SafetyPlanPage: View {
         }
     }
 
-    private func callTargets(_ plan: SafetyPlan) -> [(title: String, digits: String)] {
-        var targets: [(String, String)] = []
-        if let person = plan.helpers.first {
-            targets.append((person.name.isEmpty ? "Ma personne" : person.name, person.digits))
-        } else {
-            targets.append(("Ma personne", ""))
+    private func callTargets(_ plan: SafetyPlan) -> [CallTarget] {
+        var targets: [CallTarget] = []
+        if let person = plan.helpers.first, !person.digits.isEmpty {
+            targets.append(CallTarget(title: person.name.isEmpty ? "Ma personne" : person.name, digits: person.digits))
         }
-        if let pro = plan.professionals.first {
-            targets.append((pro.name.isEmpty ? "Ma psy" : pro.name, pro.digits))
-        } else {
-            targets.append(("Ma psy", ""))
+        if let pro = plan.professionals.first, !pro.digits.isEmpty {
+            targets.append(CallTarget(title: pro.name.isEmpty ? "Ma psy" : pro.name, digits: pro.digits))
         }
-        targets.append(("3114", "3114"))
-        targets.append(("15", "15"))
-        return targets.filter { !$0.1.isEmpty }.map { (title: $0.0, digits: $0.1) }
+        targets.append(CallTarget(title: "3114", digits: "3114"))
+        targets.append(CallTarget(title: "15", digits: "15"))
+        return targets
     }
 
     private var messageBlock: some View {
