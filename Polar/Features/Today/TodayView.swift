@@ -242,19 +242,12 @@ struct TodayView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     ForEach(quickEmotions, id: \.id) { emotion in
-                        Button {
-                            note(emotion.id)
-                        } label: {
-                            Text(emotion.label)
-                                .font(.subheadline)
-                                .foregroundStyle(Palette.ink)
-                                .padding(.horizontal, 14)
-                                .frame(minHeight: 44)
-                                .background(Palette.background, in: Capsule())
+                        IntensityChip(title: emotion.label) { intensity in
+                            note(emotion.id, intensity: intensity)
                         }
-                        .buttonStyle(.plain)
                     }
                 }
+                .padding(.top, 20)
             }
             HStack(spacing: 20) {
                 Button("Écrire") { router.openCapture() }
@@ -272,8 +265,8 @@ struct TodayView: View {
         Journal.recentEmotionKeys(from: moments).compactMap(EmotionCatalog.emotion(for:))
     }
 
-    private func note(_ key: String) {
-        let moment = Moment(emotionKey: key, source: "app")
+    private func note(_ key: String, intensity: Int? = nil) {
+        let moment = Moment(emotionKey: key, intensity: intensity, source: "app")
         notedKey = key
         context.insert(moment)
         try? context.save()

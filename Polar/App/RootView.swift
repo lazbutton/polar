@@ -3,6 +3,7 @@ import SwiftUI
 
 struct RootView: View {
     @Environment(\.modelContext) private var context
+    @Environment(\.undoManager) private var undoManager
     @Environment(\.scenePhase) private var scenePhase
     @Environment(Preferences.self) private var preferences
     @Environment(CaptureRouter.self) private var router
@@ -52,26 +53,34 @@ struct RootView: View {
             await openPendingCapture()
         }
         .onChange(of: scenePhase) { _, phase in
+            lock.grace = preferences.graceDelay
             switch phase {
             case .active:
                 if preferences.faceIDEnabled {
+                    if lock.shouldLockOnForeground() {
+                        lock.lockIfNeeded(enabled: true)
+                    }
                     lock.unlock()
                 } else {
                     lock.lockIfNeeded(enabled: false)
                 }
             case .background:
-                lock.lockIfNeeded(enabled: preferences.faceIDEnabled)
+                lock.noteBackground()
             default:
                 break
             }
         }
         .task {
+            lock.grace = preferences.graceDelay
             if preferences.faceIDEnabled {
                 lock.lockIfNeeded(enabled: true)
                 if scenePhase == .active {
                     lock.unlock()
                 }
             }
+            context.undoManager = undoManager
+            Migration.runIfNeeded(in: context)
+            QuickAction.install()
             Reminders.registerCategories()
             WatchBridge.shared.activate()
             await HealthSync.catchUp(moments: moments, in: context)

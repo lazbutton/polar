@@ -5,7 +5,22 @@ import Observation
 @Observable
 final class AppLock {
     var isLocked = false
+    /// Délai de grâce : Face ID seulement si l'app est restée en arrière-plan plus longtemps.
+    var grace: TimeInterval = 300
+    private var backgroundedAt: Date?
     private var evaluation: Task<Void, Never>?
+
+    /// Note l'entrée en arrière-plan (le flou du sélecteur reste piloté à part, sans délai).
+    func noteBackground() {
+        backgroundedAt = .now
+    }
+
+    /// Vrai si le délai de grâce est dépassé au retour au premier plan.
+    func shouldLockOnForeground() -> Bool {
+        defer { backgroundedAt = nil }
+        guard let backgroundedAt else { return false }
+        return Date.now.timeIntervalSince(backgroundedAt) > grace
+    }
 
     func lockIfNeeded(enabled: Bool) {
         guard enabled else {

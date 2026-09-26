@@ -26,20 +26,62 @@ struct SettingsView: View {
                         }
                     }
                     NavigationLink("Ajouter", value: AppRoute.medication(nil))
+                    if preferences.trackLabs {
+                        NavigationLink("Analyses") { LabsView() }
+                    }
                 }
                 Section("Points suivis") {
                     Toggle("Humeur basse", isOn: $preferences.trackDepressed)
                     Toggle("Humeur haute", isOn: $preferences.trackElevated)
                     Toggle("Irritabilité", isOn: $preferences.trackIrritability)
                     Toggle("Anxiété", isOn: $preferences.trackAnxiety)
+                    Toggle("Énergie", isOn: $preferences.trackEnergy)
+                    Toggle("Rythme du jour", isOn: $preferences.trackRhythm)
+                    Toggle("Facteurs", isOn: $preferences.trackFactors)
+                    Toggle("Analyses", isOn: $preferences.trackLabs)
                     Toggle("Symptômes psychotiques", isOn: $preferences.trackPsychotic)
                     Toggle("Poids", isOn: $preferences.trackWeight)
                     Toggle("Séance", isOn: $preferences.trackTherapy)
                     customPoints
                 }
+                Section("Point de la semaine") {
+                    Toggle("Activer", isOn: $preferences.weeklyEnabled)
+                    if preferences.weeklyEnabled {
+                        Picker("Jour", selection: $preferences.weeklyWeekday) {
+                            ForEach(1...7, id: \.self) { day in
+                                Text(Preferences.weekdayNames[day] ?? "").tag(day)
+                            }
+                        }
+                        Toggle("Toutes les deux semaines", isOn: $preferences.weeklyEveryTwoWeeks)
+                        Toggle("GAD-7 en plus", isOn: $preferences.includeGAD7)
+                    }
+                }
+                Section("Signaux") {
+                    NavigationLink("Régler les signaux") { SignalsView() }
+                }
+                Section("Affichage") {
+                    Toggle("Mode discret", isOn: $preferences.discreetMode)
+                    Text("Le mode discret masque les courbes et les constats ; le calendrier reste.")
+                        .font(.caption)
+                        .foregroundStyle(Palette.inkMuted)
+                    Toggle("Pause du suivi", isOn: Binding(
+                        get: { preferences.isPaused() },
+                        set: { on in
+                            preferences.pauseUntil = on ? Calendar.current.date(byAdding: .day, value: 14, to: .now) : nil
+                            preferences.save()
+                        }
+                    ))
+                    if preferences.isPaused(), let until = preferences.pauseUntil {
+                        DatePicker("Jusqu'au", selection: Binding(
+                            get: { until },
+                            set: { preferences.pauseUntil = $0; preferences.save() }
+                        ), displayedComponents: .date)
+                    }
+                }
                 Section("Rappels") {
                     Toggle("Bilan du soir", isOn: $preferences.eveningReminderEnabled)
                     Stepper("Heure \(preferences.eveningHour) h \(preferences.eveningMinute)", value: $preferences.eveningHour, in: 0...23)
+                    Toggle("Textes neutres sur l'écran verrouillé", isOn: $preferences.neutralNotifications)
                 }
                 Section("Journée") {
                     Stepper("Bascule à \(preferences.startHour) h", value: $preferences.startHour, in: 0...10)
@@ -49,6 +91,14 @@ struct SettingsView: View {
                 }
                 Section("Confidentialité") {
                     Toggle("Face ID à l'ouverture", isOn: $preferences.faceIDEnabled)
+                    if preferences.faceIDEnabled {
+                        Picker("Délai de grâce", selection: $preferences.graceDelay) {
+                            Text("Immédiat").tag(0.0)
+                            Text("1 min").tag(60.0)
+                            Text("5 min").tag(300.0)
+                            Text("15 min").tag(900.0)
+                        }
+                    }
                     Toggle("Flou dans le sélecteur d'apps", isOn: $preferences.blurInSwitcher)
                     Toggle("Synchro iCloud", isOn: $preferences.cloudKitEnabled)
                     Text("Relance Polar pour appliquer la synchro. Elle reste coupée si iCloud n'est pas autorisé.")
@@ -93,6 +143,14 @@ struct SettingsView: View {
                         location.request()
                     }
                 }
+                Section("Ressources") {
+                    Link("3114, prévention du suicide", destination: URL(string: "https://3114.fr")!)
+                    Link("Fondation FondaMental", destination: URL(string: "https://www.fondation-fondamental.org")!)
+                    Link("Psycom", destination: URL(string: "https://www.psycom.org")!)
+                    Link("Argos 2001", destination: URL(string: "https://www.argos2001.fr")!)
+                    Link("Unafam", destination: URL(string: "https://www.unafam.org")!)
+                }
+                .tint(Palette.ink)
             }
             .navigationTitle("Réglages")
             .tint(Palette.ink)
