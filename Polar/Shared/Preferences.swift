@@ -17,36 +17,6 @@ enum AppearanceMode: String, Codable, CaseIterable, Identifiable {
     }
 }
 
-struct AlertRule: Codable, Identifiable, Equatable {
-    enum Kind: String, Codable, CaseIterable, Identifiable {
-        case shortSleep
-        case elevated
-        case depressed
-
-        var id: String { rawValue }
-
-        var label: String {
-            switch self {
-            case .shortSleep: "Sommeil sous"
-            case .elevated: "Humeur haute à"
-            case .depressed: "Humeur basse à"
-            }
-        }
-    }
-
-    var id: UUID
-    var kind: Kind
-    var threshold: Double
-    var span: Int
-
-    init(id: UUID = UUID(), kind: Kind, threshold: Double, span: Int) {
-        self.id = id
-        self.kind = kind
-        self.threshold = threshold
-        self.span = span
-    }
-}
-
 @MainActor
 @Observable
 final class Preferences {
@@ -65,6 +35,19 @@ final class Preferences {
     var trackPsychotic: Bool
     var trackWeight: Bool
     var trackTherapy: Bool
+    var trackEnergy: Bool
+    var trackRhythm: Bool
+    var trackFactors: Bool
+    var trackLabs: Bool
+    var weeklyEnabled: Bool
+    var weeklyWeekday: Int
+    var weeklyEveryTwoWeeks: Bool
+    var includeGAD7: Bool
+    var discreetMode: Bool
+    var pauseUntil: Date?
+    var graceDelay: Double
+    var neutralNotifications: Bool
+    var sessionQuestions: [String]
     var customPointNames: [String]
     var behaviorTags: [String]
     var faceIDEnabled: Bool
@@ -93,6 +76,19 @@ final class Preferences {
         trackPsychotic = store.bool(forKey: Keys.trackPsychotic)
         trackWeight = store.bool(forKey: Keys.trackWeight)
         trackTherapy = store.bool(forKey: Keys.trackTherapy)
+        trackEnergy = store.object(forKey: Keys.trackEnergy) as? Bool ?? true
+        trackRhythm = store.bool(forKey: Keys.trackRhythm)
+        trackFactors = store.bool(forKey: Keys.trackFactors)
+        trackLabs = store.bool(forKey: Keys.trackLabs)
+        weeklyEnabled = store.bool(forKey: Keys.weeklyEnabled)
+        weeklyWeekday = store.object(forKey: Keys.weeklyWeekday) as? Int ?? 1
+        weeklyEveryTwoWeeks = store.bool(forKey: Keys.weeklyEveryTwoWeeks)
+        includeGAD7 = store.bool(forKey: Keys.includeGAD7)
+        discreetMode = store.bool(forKey: Keys.discreetMode)
+        pauseUntil = store.object(forKey: Keys.pauseUntil) as? Date
+        graceDelay = store.object(forKey: Keys.graceDelay) as? Double ?? 300
+        neutralNotifications = store.object(forKey: Keys.neutralNotifications) as? Bool ?? true
+        sessionQuestions = store.stringArray(forKey: Keys.sessionQuestions) ?? []
         customPointNames = store.stringArray(forKey: Keys.customPointNames) ?? []
         behaviorTags = store.stringArray(forKey: Keys.behaviorTags) ?? Self.defaultBehaviorTags
         faceIDEnabled = store.object(forKey: Keys.faceIDEnabled) as? Bool ?? true
@@ -131,6 +127,19 @@ final class Preferences {
         defaults.set(trackPsychotic, forKey: Keys.trackPsychotic)
         defaults.set(trackWeight, forKey: Keys.trackWeight)
         defaults.set(trackTherapy, forKey: Keys.trackTherapy)
+        defaults.set(trackEnergy, forKey: Keys.trackEnergy)
+        defaults.set(trackRhythm, forKey: Keys.trackRhythm)
+        defaults.set(trackFactors, forKey: Keys.trackFactors)
+        defaults.set(trackLabs, forKey: Keys.trackLabs)
+        defaults.set(weeklyEnabled, forKey: Keys.weeklyEnabled)
+        defaults.set(weeklyWeekday, forKey: Keys.weeklyWeekday)
+        defaults.set(weeklyEveryTwoWeeks, forKey: Keys.weeklyEveryTwoWeeks)
+        defaults.set(includeGAD7, forKey: Keys.includeGAD7)
+        defaults.set(discreetMode, forKey: Keys.discreetMode)
+        defaults.set(pauseUntil, forKey: Keys.pauseUntil)
+        defaults.set(graceDelay, forKey: Keys.graceDelay)
+        defaults.set(neutralNotifications, forKey: Keys.neutralNotifications)
+        defaults.set(sessionQuestions, forKey: Keys.sessionQuestions)
         defaults.set(customPointNames, forKey: Keys.customPointNames)
         defaults.set(behaviorTags, forKey: Keys.behaviorTags)
         defaults.set(faceIDEnabled, forKey: Keys.faceIDEnabled)
@@ -171,6 +180,23 @@ final class Preferences {
         return hour >= nightStartHour && hour < startHour
     }
 
+    /// Le suivi est en pause jusqu'à une date : rappels et signaux suspendus.
+    func isPaused(at date: Date = .now) -> Bool {
+        guard let pauseUntil else { return false }
+        return pauseUntil > date
+    }
+
+    /// Vrai le jour choisi pour le point de la semaine.
+    func isWeeklyDay(at date: Date = .now, calendar: Calendar = .current) -> Bool {
+        guard weeklyEnabled else { return false }
+        return calendar.component(.weekday, from: date) == weeklyWeekday
+    }
+
+    static let weekdayNames = [
+        1: "Dimanche", 2: "Lundi", 3: "Mardi", 4: "Mercredi",
+        5: "Jeudi", 6: "Vendredi", 7: "Samedi",
+    ]
+
     static let defaultBehaviorTags = [
         "S'isoler",
         "Appeler quelqu'un",
@@ -193,6 +219,19 @@ final class Preferences {
         static let trackPsychotic = "trackPsychotic"
         static let trackWeight = "trackWeight"
         static let trackTherapy = "trackTherapy"
+        static let trackEnergy = "trackEnergy"
+        static let trackRhythm = "trackRhythm"
+        static let trackFactors = "trackFactors"
+        static let trackLabs = "trackLabs"
+        static let weeklyEnabled = "weeklyEnabled"
+        static let weeklyWeekday = "weeklyWeekday"
+        static let weeklyEveryTwoWeeks = "weeklyEveryTwoWeeks"
+        static let includeGAD7 = "includeGAD7"
+        static let discreetMode = "discreetMode"
+        static let pauseUntil = "pauseUntil"
+        static let graceDelay = "graceDelay"
+        static let neutralNotifications = "neutralNotifications"
+        static let sessionQuestions = "sessionQuestions"
         static let customPointNames = "customPointNames"
         static let behaviorTags = "behaviorTags"
         static let faceIDEnabled = "faceIDEnabled"

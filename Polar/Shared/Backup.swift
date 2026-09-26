@@ -7,6 +7,10 @@ struct Archive: Codable {
     var medications: [MedicationDTO]
     var intakes: [IntakeDTO]
     var plan: CarePlanDTO?
+    // Nouveautés 0.2 (optionnelles : une sauvegarde 0.1 se réimporte telle quelle).
+    var safetyPlan: SafetyPlanDTO?
+    var surveys: [SurveyResponseDTO]?
+    var labs: [LabResultDTO]?
 }
 
 struct MomentDTO: Codable {
@@ -18,6 +22,7 @@ struct MomentDTO: Codable {
     var behaviorTags: [String]
     var associations: [String]
     var source: String
+    var forSession: Bool?
 }
 
 struct DayLogDTO: Codable {
@@ -33,6 +38,16 @@ struct DayLogDTO: Codable {
     var therapySession: Bool
     var note: String?
     var customMarks: [String]
+    var energy: Int?
+    var bedtime: Date?
+    var wakeTime: Date?
+    var firstContact: Date?
+    var activityStart: Date?
+    var dinner: Date?
+    var signsSeen: [UUID]?
+    var factors: [FactorCount]?
+    var daylightMinutes: Double?
+    var steps: Int?
 }
 
 struct MedicationDTO: Codable, Identifiable {
@@ -59,6 +74,35 @@ struct CarePlanDTO: Codable {
     var trustedPhone: String?
     var therapistName: String?
     var therapistPhone: String?
+    var signs: [WarningSign]?
+    var actions: [PlanAction]?
+    var contacts: [Contact]?
+    var reviewedAt: Date?
+}
+
+struct SafetyPlanDTO: Codable {
+    var reasons: [String]
+    var warningSigns: [String]
+    var copingAlone: [String]
+    var distractions: [String]
+    var helpers: [Contact]
+    var professionals: [Contact]
+    var safeEnvironment: [String]
+    var reviewedAt: Date?
+}
+
+struct SurveyResponseDTO: Codable {
+    var date: Date
+    var instrument: String
+    var answers: [Int]
+}
+
+struct LabResultDTO: Codable {
+    var date: Date
+    var name: String
+    var value: Double
+    var unit: String
+    var note: String?
 }
 
 enum Backup {
@@ -69,6 +113,9 @@ enum Backup {
         let medications = try context.fetch(FetchDescriptor<Medication>())
         let intakes = try context.fetch(FetchDescriptor<MedIntake>())
         let plan = try CarePlan.existing(in: context)
+        let safety = try SafetyPlan.existing(in: context)
+        let surveys = try context.fetch(FetchDescriptor<SurveyResponse>())
+        let labs = try context.fetch(FetchDescriptor<LabResult>())
 
         var medicationIDs: [PersistentIdentifier: UUID] = [:]
         let medicationDTOs = medications.map { medication -> MedicationDTO in
@@ -94,7 +141,8 @@ enum Backup {
                     behavior: $0.behavior,
                     behaviorTags: $0.behaviorTags,
                     associations: $0.associations,
-                    source: $0.source
+                    source: $0.source,
+                    forSession: $0.forSession
                 )
             },
             dayLogs: logs.map {
@@ -110,7 +158,17 @@ enum Backup {
                     weightKg: $0.weightKg,
                     therapySession: $0.therapySession,
                     note: $0.note,
-                    customMarks: $0.customMarks
+                    customMarks: $0.customMarks,
+                    energy: $0.energy,
+                    bedtime: $0.bedtime,
+                    wakeTime: $0.wakeTime,
+                    firstContact: $0.firstContact,
+                    activityStart: $0.activityStart,
+                    dinner: $0.dinner,
+                    signsSeen: $0.signsSeen,
+                    factors: $0.factors,
+                    daylightMinutes: $0.daylightMinutes,
+                    steps: $0.steps
                 )
             },
             medications: medicationDTOs,
@@ -127,9 +185,27 @@ enum Backup {
                     trustedName: $0.trustedName,
                     trustedPhone: $0.trustedPhone,
                     therapistName: $0.therapistName,
-                    therapistPhone: $0.therapistPhone
+                    therapistPhone: $0.therapistPhone,
+                    signs: $0.signs,
+                    actions: $0.actions,
+                    contacts: $0.contacts,
+                    reviewedAt: $0.reviewedAt
                 )
-            }
+            },
+            safetyPlan: safety.map {
+                SafetyPlanDTO(
+                    reasons: $0.reasons,
+                    warningSigns: $0.warningSigns,
+                    copingAlone: $0.copingAlone,
+                    distractions: $0.distractions,
+                    helpers: $0.helpers,
+                    professionals: $0.professionals,
+                    safeEnvironment: $0.safeEnvironment,
+                    reviewedAt: $0.reviewedAt
+                )
+            },
+            surveys: surveys.map { SurveyResponseDTO(date: $0.date, instrument: $0.instrument, answers: $0.answers) },
+            labs: labs.map { LabResultDTO(date: $0.date, name: $0.name, value: $0.value, unit: $0.unit, note: $0.note) }
         )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -148,6 +224,9 @@ enum Backup {
         for log in try context.fetch(FetchDescriptor<DayLog>()) { context.delete(log) }
         for medication in try context.fetch(FetchDescriptor<Medication>()) { context.delete(medication) }
         if let plan = try CarePlan.existing(in: context) { context.delete(plan) }
+        if let safety = try SafetyPlan.existing(in: context) { context.delete(safety) }
+        for survey in try context.fetch(FetchDescriptor<SurveyResponse>()) { context.delete(survey) }
+        for lab in try context.fetch(FetchDescriptor<LabResult>()) { context.delete(lab) }
         try context.save()
 
         for dto in archive.moments {
@@ -157,6 +236,7 @@ enum Backup {
             moment.behavior = dto.behavior
             moment.behaviorTags = dto.behaviorTags
             moment.associations = dto.associations
+            moment.forSession = dto.forSession ?? false
             context.insert(moment)
         }
 
@@ -174,6 +254,16 @@ enum Backup {
             log.therapySession = dto.therapySession
             log.note = dto.note
             log.customMarks = dto.customMarks
+            log.energy = dto.energy
+            log.bedtime = dto.bedtime
+            log.wakeTime = dto.wakeTime
+            log.firstContact = dto.firstContact
+            log.activityStart = dto.activityStart
+            log.dinner = dto.dinner
+            log.signsSeen = dto.signsSeen ?? []
+            log.factors = dto.factors ?? []
+            log.daylightMinutes = dto.daylightMinutes
+            log.steps = dto.steps
             context.insert(log)
             logsByDay[log.day] = log
         }
@@ -209,8 +299,36 @@ enum Backup {
             plan.trustedPhone = dto.trustedPhone
             plan.therapistName = dto.therapistName
             plan.therapistPhone = dto.therapistPhone
+            plan.signs = dto.signs ?? []
+            plan.actions = dto.actions ?? []
+            plan.contacts = dto.contacts ?? []
+            plan.reviewedAt = dto.reviewedAt
             context.insert(plan)
         }
+
+        if let dto = archive.safetyPlan {
+            let safety = SafetyPlan()
+            safety.reasons = dto.reasons
+            safety.warningSigns = dto.warningSigns
+            safety.copingAlone = dto.copingAlone
+            safety.distractions = dto.distractions
+            safety.helpers = dto.helpers
+            safety.professionals = dto.professionals
+            safety.safeEnvironment = dto.safeEnvironment
+            safety.reviewedAt = dto.reviewedAt
+            context.insert(safety)
+        }
+
+        for dto in archive.surveys ?? [] {
+            context.insert(SurveyResponse(instrument: dto.instrument, answers: dto.answers, date: dto.date))
+        }
+
+        for dto in archive.labs ?? [] {
+            let lab = LabResult(name: dto.name, value: dto.value, unit: dto.unit, date: dto.date)
+            lab.note = dto.note
+            context.insert(lab)
+        }
+
         try context.save()
     }
 }

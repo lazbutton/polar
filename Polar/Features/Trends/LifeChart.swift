@@ -67,6 +67,42 @@ struct SleepChart: View {
     }
 }
 
+/// Scores des questionnaires dans le temps, sans libellé de sévérité par défaut.
+struct SurveyChart: View {
+    var surveys: [SurveyResponse]
+
+    var body: some View {
+        if surveys.isEmpty {
+            EmptyView()
+        } else {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Questionnaires")
+                    .font(.headline)
+                    .foregroundStyle(Palette.ink)
+                Chart(surveys.sorted { $0.date < $1.date }) { survey in
+                    LineMark(
+                        x: .value("Jour", survey.date, unit: .day),
+                        y: .value("Score", survey.score)
+                    )
+                    .foregroundStyle(by: .value("Questionnaire", survey.instrument.uppercased()))
+                    PointMark(
+                        x: .value("Jour", survey.date, unit: .day),
+                        y: .value("Score", survey.score)
+                    )
+                    .foregroundStyle(by: .value("Questionnaire", survey.instrument.uppercased()))
+                }
+                .chartForegroundStyleScale([
+                    "PHQ9": Palette.depressed,
+                    "ASRM": Palette.elevated,
+                    "GAD7": Palette.anxiety,
+                ])
+                .frame(height: 140)
+                .accessibilityLabel("Scores des questionnaires")
+            }
+        }
+    }
+}
+
 enum Measure: String, CaseIterable, Identifiable {
     case sleep, elevated, depressed, irritability, anxiety, weight
     var id: String { rawValue }

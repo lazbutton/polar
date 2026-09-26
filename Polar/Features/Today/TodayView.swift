@@ -8,6 +8,7 @@ struct TodayView: View {
     @Query(sort: \Moment.createdAt, order: .reverse) private var moments: [Moment]
     @Query(sort: \DayLog.day, order: .reverse) private var logs: [DayLog]
     @Query private var plans: [CarePlan]
+    @Query(sort: \SurveyResponse.date, order: .reverse) private var surveys: [SurveyResponse]
     @State private var notedKey = ""
 
     private var today: Date { Date.now.logicalDay(startHour: preferences.startHour) }
@@ -19,9 +20,21 @@ struct TodayView: View {
     }
     private var plan: CarePlan? { plans.first }
     private var hits: [AlertHit] {
-        AlertEngine.hits(rules: preferences.alertRules, logs: logs, startHour: preferences.startHour)
+        guard !preferences.isPaused() else { return [] }
+        return AlertEngine.hits(
+            rules: preferences.alertRules,
+            logs: logs,
+            plan: plan,
+            surveys: surveys,
+            startHour: preferences.startHour
+        )
     }
     private var eveningPending: Bool { preferences.isPastEveningReminder() && log == nil }
+    private var weeklyPending: Bool {
+        guard preferences.isWeeklyDay(), !preferences.isPaused() else { return false }
+        let start = Calendar.current.date(byAdding: .day, value: -1, to: .now) ?? .now
+        return !surveys.contains { $0.date >= start }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -72,6 +85,10 @@ struct TodayView: View {
             }
             dayCard
                 .journalRow(top: 12, bottom: 4)
+            if weeklyPending {
+                weeklyCard
+                    .journalRow(top: 6, bottom: 4)
+            }
             Text("Moments")
                 .font(.headline)
                 .foregroundStyle(Palette.ink)
@@ -153,6 +170,11 @@ struct TodayView: View {
                             GlanceGauge(title: "Anxiété", level: log.anxiety, color: Palette.anxiety)
                         }
                     }
+                    if preferences.trackEnergy, let energy = log.energy {
+                        Text("Énergie \(EnergyRow.word(energy))")
+                            .font(.caption)
+                            .foregroundStyle(Palette.inkMuted)
+                    }
                 } else {
                     Text("Sommeil, humeur, irritabilité et anxiété.")
                         .font(.subheadline)
@@ -189,6 +211,29 @@ struct TodayView: View {
         return parts.joined(separator: ", ")
     }
 
+    private var weeklyCard: some View {
+        Button { router.openWeeklyCheck() } label: {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Point de la semaine")
+                        .font(.headline)
+                        .foregroundStyle(Palette.ink)
+                    Text("2 min")
+                        .font(.subheadline)
+                        .foregroundStyle(Palette.inkMuted)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Palette.inkFaint)
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Palette.background, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+
     private var composer: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Un mot suffit.")
@@ -197,19 +242,12 @@ struct TodayView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     ForEach(quickEmotions, id: \.id) { emotion in
-                        Button {
-                            note(emotion.id)
-                        } label: {
-                            Text(emotion.label)
-                                .font(.subheadline)
-                                .foregroundStyle(Palette.ink)
-                                .padding(.horizontal, 14)
-                                .frame(minHeight: 44)
-                                .background(Palette.background, in: Capsule())
+                        IntensityChip(title: emotion.label) { intensity in
+                            note(emotion.id, intensity: intensity)
                         }
-                        .buttonStyle(.plain)
                     }
                 }
+                .padding(.top, 20)
             }
             HStack(spacing: 20) {
                 Button("Écrire") { router.openCapture() }
@@ -227,8 +265,8 @@ struct TodayView: View {
         Journal.recentEmotionKeys(from: moments).compactMap(EmotionCatalog.emotion(for:))
     }
 
-    private func note(_ key: String) {
-        let moment = Moment(emotionKey: key, source: "app")
+    private func note(_ key: String, intensity: Int? = nil) {
+        let moment = Moment(emotionKey: key, intensity: intensity, source: "app")
         notedKey = key
         context.insert(moment)
         try? context.save()
@@ -300,7 +338,8 @@ struct TodayView: View {
     }
 
     private func alertCard(_ hit: AlertHit) -> some View {
-        SurfaceCard {
+        let actions = planActions(for: hit)
+        return SurfaceCard {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Tes repères")
                     .font(.caption)
@@ -308,20 +347,17 @@ struct TodayView: View {
                 Text(hit.detail)
                     .font(.headline)
                     .foregroundStyle(Palette.ink)
-                if let signs = plan?.warningSigns, !signs.isEmpty {
-                    Text(signs.joined(separator: " · "))
-                        .font(.subheadline)
-                        .foregroundStyle(Palette.inkMuted)
-                }
-                if let helps = plan?.whatHelps, !helps.isEmpty {
-                    Text(helps.joined(separator: " · "))
-                        .font(.body)
-                        .foregroundStyle(Palette.ink)
+                if !actions.isEmpty {
+                    ForEach(actions) { action in
+                        Text(action.text)
+                            .font(.body)
+                            .foregroundStyle(Palette.ink)
+                    }
                 }
                 HStack(spacing: 16) {
-                    Button("Mon plan") { router.openPlan() }
+                    Button("Voir mon plan") { router.openPlan() }
                         .frame(minHeight: 44)
-                    if let phone = plan?.trustedPhone, let url = URL(string: "tel:\(phone.filter(\.isNumber))") {
+                    if let phone = plan?.contacts.first?.digits, !phone.isEmpty, let url = URL(string: "tel:\(phone)") {
                         Link("Appeler", destination: url)
                             .frame(minHeight: 44)
                     }
@@ -330,6 +366,11 @@ struct TodayView: View {
                 .foregroundStyle(Palette.ink)
             }
         }
+    }
+
+    private func planActions(for hit: AlertHit) -> [PlanAction] {
+        guard let plan, let pole = hit.pole, let stage = PlanStage(rawValue: hit.stage) else { return [] }
+        return plan.actions(pole: pole, stage: stage)
     }
 
     private func delete(_ moment: Moment) {

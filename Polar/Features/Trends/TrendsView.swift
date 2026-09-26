@@ -5,8 +5,10 @@ import SwiftUI
 struct TrendsView: View {
     @Environment(\.modelContext) private var context
     @Environment(Preferences.self) private var preferences
+    @Environment(CaptureRouter.self) private var router
     @Query(sort: \DayLog.day) private var logs: [DayLog]
     @Query(sort: \Moment.createdAt, order: .reverse) private var moments: [Moment]
+    @Query(sort: \SurveyResponse.date) private var surveys: [SurveyResponse]
 
     @State private var days = 30
     @State private var firstMeasure = Measure.sleep
@@ -25,6 +27,24 @@ struct TrendsView: View {
 
     private var periodLogs: [DayLog] { logs.filter { interval.contains($0.day) } }
     private var periodMoments: [Moment] { moments.filter { interval.contains($0.createdAt) } }
+    private var periodSurveys: [SurveyResponse] { surveys.filter { interval.contains($0.date) } }
+
+    private var sessionButton: some View {
+        Button { router.openSession() } label: {
+            HStack {
+                Text("Préparer ma séance")
+                    .font(.headline)
+                    .foregroundStyle(Palette.ink)
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Palette.inkFaint)
+            }
+            .padding(16)
+            .background(Palette.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
 
     var body: some View {
         ScrollView {
@@ -37,13 +57,21 @@ struct TrendsView: View {
                     Text("1 an").tag(365)
                 }
                 .pickerStyle(.segmented)
-                LifeChart(logs: periodLogs)
-                SleepChart(logs: periodLogs)
-                facts
-                emotions
-                compare
-                search
-                summaryBlock
+                sessionButton
+                if preferences.discreetMode {
+                    Text("Courbes masquées. Tes notes continuent.")
+                        .font(.subheadline)
+                        .foregroundStyle(Palette.inkMuted)
+                } else {
+                    LifeChart(logs: periodLogs)
+                    SleepChart(logs: periodLogs)
+                    SurveyChart(surveys: periodSurveys)
+                    facts
+                    emotions
+                    compare
+                    search
+                    summaryBlock
+                }
                 export
             }
             .padding(20)

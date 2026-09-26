@@ -13,6 +13,9 @@ enum SharedStore {
         Medication.self,
         MedIntake.self,
         CarePlan.self,
+        SafetyPlan.self,
+        SurveyResponse.self,
+        LabResult.self,
     ])
 
     static let container: ModelContainer = {
