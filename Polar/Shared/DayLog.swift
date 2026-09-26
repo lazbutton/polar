@@ -8,8 +8,29 @@ final class DayLog {
     var elevated: Int = 0
     var irritability: Int = 0
     var anxiety: Int = 0
+
+    /// Énergie et activité par rapport à d'habitude, de -2 à +2 (0 = habituelle). nil = non noté.
+    var energy: Int?
+
+    // Sommeil
     var sleepHours: Double?
     var sleepFromHealth: Bool = false
+    var bedtime: Date?
+    var wakeTime: Date?
+
+    // Rythme du jour, SRM-5 (en option ; lever et coucher viennent du sommeil)
+    var firstContact: Date?
+    var activityStart: Date?
+    var dinner: Date?
+
+    // Plan et facteurs
+    var signsSeen: [UUID] = []          // WarningSign.id remarqués ce jour
+    var factors: [FactorCount] = []
+
+    // Cache Santé, rafraîchi après l'affichage
+    var daylightMinutes: Double?
+    var steps: Int?
+
     var psychoticSymptoms: Bool?
     var weightKg: Double?
     var therapySession: Bool = false

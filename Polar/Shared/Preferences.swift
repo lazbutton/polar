@@ -17,36 +17,6 @@ enum AppearanceMode: String, Codable, CaseIterable, Identifiable {
     }
 }
 
-struct AlertRule: Codable, Identifiable, Equatable {
-    enum Kind: String, Codable, CaseIterable, Identifiable {
-        case shortSleep
-        case elevated
-        case depressed
-
-        var id: String { rawValue }
-
-        var label: String {
-            switch self {
-            case .shortSleep: "Sommeil sous"
-            case .elevated: "Humeur haute à"
-            case .depressed: "Humeur basse à"
-            }
-        }
-    }
-
-    var id: UUID
-    var kind: Kind
-    var threshold: Double
-    var span: Int
-
-    init(id: UUID = UUID(), kind: Kind, threshold: Double, span: Int) {
-        self.id = id
-        self.kind = kind
-        self.threshold = threshold
-        self.span = span
-    }
-}
-
 @MainActor
 @Observable
 final class Preferences {

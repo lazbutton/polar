@@ -12,6 +12,8 @@ final class Moment {
     var associations: [String] = []
     var source: String = "app"
     var healthSampleID: UUID?
+    /// « À en parler avec ma psy » : le moment rejoint Préparer ma séance.
+    var forSession: Bool = false
 
     init(emotionKey: String? = nil, intensity: Int? = nil, source: String = "app") {
         self.emotionKey = emotionKey
