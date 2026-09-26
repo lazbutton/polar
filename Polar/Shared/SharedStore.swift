@@ -7,6 +7,8 @@ enum SharedStore {
     static let appGroupIdentifier = "group.fr.laz.polar"
     static let cloudKitContainerIdentifier = "iCloud.fr.laz.polar"
 
+    /// Schéma 0.3 : ajoute les séances. Les propriétés nouvelles ont une valeur par défaut,
+    /// SwiftData fait donc une migration légère depuis le schéma 0.2.
     static let schema = Schema([
         Moment.self,
         DayLog.self,
@@ -16,6 +18,7 @@ enum SharedStore {
         SafetyPlan.self,
         SurveyResponse.self,
         LabResult.self,
+        TherapySession.self,
     ])
 
     static let container: ModelContainer = {

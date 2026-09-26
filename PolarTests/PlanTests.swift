@@ -35,18 +35,6 @@ struct DistressTests {
     }
 }
 
-struct DaylightTests {
-    @Test func presDeLEquinoxeAParis() {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "Europe/Paris")!
-        let day = DateComponents(calendar: calendar, year: 2026, month: 9, day: 26).date!
-        let duration = Daylight.duration(on: day, latitude: 48.86, longitude: 2.35, calendar: calendar)
-        let hours = (duration ?? 0) / 3600
-        #expect(hours > 11.5)
-        #expect(hours < 13)
-    }
-}
-
 struct AlertEngineTests {
     @Test func pasDeSignalSansRegle() {
         let hits = AlertEngine.hits(rules: [], logs: [])

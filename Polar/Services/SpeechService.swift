@@ -14,6 +14,9 @@ final class SpeechService {
 
     func start() async throws {
         transcript = ""
+        guard await AVAudioApplication.requestRecordPermission() else {
+            throw SpeechDenied()
+        }
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(.record, mode: .measurement, options: .duckOthers)
         try session.setActive(true, options: .notifyOthersOnDeactivation)
@@ -61,4 +64,6 @@ final class SpeechService {
         return transcript
     }
 }
+
+private struct SpeechDenied: Error {}
 #endif

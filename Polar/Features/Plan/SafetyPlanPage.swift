@@ -5,7 +5,9 @@ import SwiftUI
 /// Toujours accessible, même en mode discret ou en pause du suivi.
 struct SafetyPlanPage: View {
     @Environment(\.modelContext) private var context
+    @Query private var cares: [CarePlan]
     @State private var plan: SafetyPlan?
+    @State private var care: CarePlan?
     @State private var message = "Je ne vais pas très bien. Tu peux me rappeler ?"
 
     var body: some View {
@@ -18,8 +20,30 @@ struct SafetyPlanPage: View {
                     StringListEditor(title: "1 · Mes signes d'alerte", systemImage: "exclamationmark.triangle", items: binding(for: \.warningSigns))
                     StringListEditor(title: "2 · Me calmer seul", systemImage: "leaf", items: binding(for: \.copingAlone))
                     StringListEditor(title: "3 · Personnes et lieux qui apaisent", systemImage: "mappin.and.ellipse", items: binding(for: \.distractions))
-                    ContactListEditor(title: "4 · Qui peut m'aider", contacts: binding(for: \.helpers), message: message)
-                    ContactListEditor(title: "5 · Professionnels et urgences", contacts: binding(for: \.professionals), message: message)
+                    SharedContactEditor(
+                        title: "4 · Qui peut m'aider",
+                        role: .trusted,
+                        contacts: care?.contacts ?? [],
+                        ids: plan?.helperIDs ?? [],
+                        fallback: plan?.helpers ?? [],
+                        onChange: { ids, contacts in
+                            care?.contacts = contacts
+                            plan?.helperIDs = ids
+                            try? context.save()
+                        }
+                    )
+                    SharedContactEditor(
+                        title: "5 · Professionnels et urgences",
+                        role: .therapist,
+                        contacts: care?.contacts ?? [],
+                        ids: plan?.professionalIDs ?? [],
+                        fallback: plan?.professionals ?? [],
+                        onChange: { ids, contacts in
+                            care?.contacts = contacts
+                            plan?.professionalIDs = ids
+                            try? context.save()
+                        }
+                    )
                     StringListEditor(title: "6 · Rendre mon environnement sûr", systemImage: "lock.shield", items: binding(for: \.safeEnvironment))
                     messageBlock
                 }
@@ -30,7 +54,10 @@ struct SafetyPlanPage: View {
         .background(Palette.background)
         .navigationTitle("Ça ne va pas")
         .navigationBarTitleDisplayMode(.large)
-        .task { plan = try? SafetyPlan.findOrCreate(in: context) }
+        .task {
+            plan = try? SafetyPlan.findOrCreate(in: context)
+            care = try? CarePlan.findOrCreate(in: context)
+        }
     }
 
     private func header(_ plan: SafetyPlan) -> some View {
@@ -76,16 +103,9 @@ struct SafetyPlanPage: View {
     }
 
     private func callTargets(_ plan: SafetyPlan) -> [CallTarget] {
-        var targets: [CallTarget] = []
-        if let person = plan.helpers.first, !person.digits.isEmpty {
-            targets.append(CallTarget(title: person.name.isEmpty ? "Ma personne" : person.name, digits: person.digits))
+        LockCalls.targets(plan: care ?? cares.first, safety: plan).map {
+            CallTarget(title: $0.title, digits: $0.digits)
         }
-        if let pro = plan.professionals.first, !pro.digits.isEmpty {
-            targets.append(CallTarget(title: pro.name.isEmpty ? "Ma psy" : pro.name, digits: pro.digits))
-        }
-        targets.append(CallTarget(title: "3114", digits: "3114"))
-        targets.append(CallTarget(title: "15", digits: "15"))
-        return targets
     }
 
     private var messageBlock: some View {
@@ -97,7 +117,9 @@ struct SafetyPlanPage: View {
                 .lineLimit(2...4)
                 .padding(12)
                 .background(Palette.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            if let person = plan?.helpers.first, let url = smsURL(person.digits) {
+            if let person = (care?.contacts ?? []).first(where: { plan?.helperIDs.contains($0.id) == true })
+                ?? plan?.helpers.first,
+               let url = smsURL(person.digits) {
                 Link("Écrire à \(person.name), c'est toi qui envoies", destination: url)
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(Palette.ink)
@@ -181,6 +203,83 @@ struct StringListEditor: View {
         guard !word.isEmpty else { return }
         items.append(word)
         draft = ""
+    }
+}
+
+/// Contacts de la liste unique, reliés au plan de sécurité par identifiant.
+struct SharedContactEditor: View {
+    let title: String
+    var role: ContactRole
+    var contacts: [Contact]
+    var ids: [UUID]
+    var fallback: [Contact]
+    var onChange: ([UUID], [Contact]) -> Void
+    @State private var name = ""
+    @State private var phone = ""
+
+    private var shown: [Contact] {
+        let resolved = ids.compactMap { id in contacts.first { $0.id == id } }
+        return resolved.isEmpty ? fallback : resolved
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.headline)
+                .foregroundStyle(Palette.ink)
+                .accessibilityAddTraits(.isHeader)
+            ForEach(shown) { contact in
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(contact.name)
+                        Text(contact.phone).font(.caption).foregroundStyle(Palette.inkMuted)
+                    }
+                    Spacer()
+                    if let url = URL(string: "tel:\(contact.digits)"), !contact.digits.isEmpty {
+                        Link("Appeler", destination: url).foregroundStyle(Palette.ink)
+                    }
+                    Button {
+                        remove(contact)
+                    } label: {
+                        Image(systemName: "minus.circle").foregroundStyle(Palette.inkFaint)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            VStack(spacing: 8) {
+                TextField("Nom", text: $name)
+                TextField("Téléphone", text: $phone)
+                    .keyboardType(.phonePad)
+                Button("Ajouter ce contact", action: add)
+                    .foregroundStyle(Palette.ink)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(12)
+            .background(Palette.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+    }
+
+    private func add() {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !phone.isEmpty else { return }
+        var nextContacts = contacts
+        var nextIDs = ids.isEmpty ? fallback.map(\.id) : ids
+        if let existing = nextContacts.first(where: { $0.digits == phone.filter({ $0.isNumber || $0 == "+" }) && !$0.digits.isEmpty }) {
+            if !nextIDs.contains(existing.id) { nextIDs.append(existing.id) }
+        } else {
+            let contact = Contact(name: trimmed, phone: phone, role: role)
+            nextContacts.append(contact)
+            nextIDs.append(contact.id)
+        }
+        onChange(nextIDs, nextContacts)
+        name = ""
+        phone = ""
+    }
+
+    private func remove(_ contact: Contact) {
+        var nextIDs = ids.isEmpty ? shown.map(\.id) : ids
+        nextIDs.removeAll { $0 == contact.id }
+        onChange(nextIDs, contacts)
     }
 }
 

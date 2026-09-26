@@ -1,14 +1,15 @@
 import SwiftData
 import SwiftUI
 
-struct MonthView: View {
+struct CalendarPane: View {
     @Environment(Preferences.self) private var preferences
-    @Environment(CaptureRouter.self) private var router
+    @Environment(Router.self) private var router
     @Query(sort: \DayLog.day) private var logs: [DayLog]
     @Query private var moments: [Moment]
 
     @State private var month = Date.now
     @State private var yearMode = false
+
     private var calendar: Calendar {
         var calendar = Calendar(identifier: .gregorian)
         calendar.locale = French.locale
@@ -20,28 +21,58 @@ struct MonthView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 HStack {
-                    Text(yearMode ? month.formatted(.dateTime.year().locale(French.locale)) : French.monthTitle(month))
-                        .font(.largeTitle.weight(.semibold))
+                    Button {
+                        yearMode.toggle()
+                    } label: {
+                        Text(yearMode ? month.formatted(.dateTime.year().locale(French.locale)) : French.monthTitle(month))
+                            .font(.title2.weight(.semibold))
+                    }
+                    .buttonStyle(.plain)
                     Spacer()
                     Button { shift(-1) } label: { Image(systemName: "chevron.left").frame(width: 44, height: 44) }
+                        .accessibilityLabel("Mois précédent")
                     Button { shift(1) } label: { Image(systemName: "chevron.right").frame(width: 44, height: 44) }
+                        .accessibilityLabel("Mois suivant")
                 }
                 .foregroundStyle(Palette.ink)
+
+                if logs.isEmpty {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Tes journées apparaîtront ici.")
+                            .font(.subheadline)
+                            .foregroundStyle(Palette.inkMuted)
+                        Button("Faire le bilan") { router.present(.dayLog(.now)) }
+                            .buttonStyle(PolarPrimaryButton())
+                    }
+                }
+
                 if yearMode {
                     yearGrid
                 } else {
                     weekdayHeader
                     monthGrid
+                    HStack(spacing: 16) {
+                        Text("▴ humeur haute")
+                        Text("▾ humeur basse")
+                    }
+                    .font(.caption)
+                    .foregroundStyle(Palette.inkMuted)
+                    .accessibilityHidden(true)
                 }
             }
             .padding(20)
             .padding(.bottom, 80)
         }
-        .background(Palette.background)
         .gesture(
             MagnificationGesture().onEnded { value in
                 if value < 0.85 { yearMode = true }
                 if value > 1.15 { yearMode = false }
+            }
+        )
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 40).onEnded { value in
+                guard abs(value.translation.width) > abs(value.translation.height) else { return }
+                shift(value.translation.width < 0 ? 1 : -1)
             }
         )
     }
@@ -58,6 +89,7 @@ struct MonthView: View {
                     .frame(maxWidth: .infinity)
             }
         }
+        .accessibilityHidden(true)
     }
 
     private var monthGrid: some View {
@@ -65,13 +97,36 @@ struct MonthView: View {
         return LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 7), spacing: 8) {
             ForEach(days.indices, id: \.self) { index in
                 if let day = days[index] {
-                    DayCell(day: day, log: log(on: day), hasMoment: hasMoment(on: day))
-                        .onTapGesture { router.openDayLog(on: day) }
+                    dayButton(day)
                 } else {
                     Color.clear.frame(height: 72)
                 }
             }
         }
+    }
+
+    private func dayButton(_ day: Date) -> some View {
+        let logical = day.logicalDay(startHour: preferences.startHour, calendar: calendar)
+        let log = log(on: day)
+        return Button {
+            router.push(.day(logical))
+        } label: {
+            DayCell(day: day, log: log, hasMoment: hasMoment(on: day))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(accessLabel(day: day, log: log))
+        .contextMenu {
+            Button("Ouvrir") { router.push(.day(logical)) }
+            Button("Modifier le bilan") { router.present(.dayLog(logical)) }
+        }
+    }
+
+    private func accessLabel(day: Date, log: DayLog?) -> String {
+        var parts = [French.shortDay(day)]
+        guard let log else { return parts.joined(separator: ", ") }
+        if log.depressed > 0 { parts.append("humeur basse \(French.level(log.depressed).lowercased())") }
+        if log.elevated > 0 { parts.append("humeur haute \(French.level(log.elevated).lowercased())") }
+        return parts.joined(separator: ", ")
     }
 
     private var yearGrid: some View {
@@ -182,6 +237,5 @@ struct DayCell: View {
         .padding(6)
         .frame(maxWidth: .infinity, minHeight: 72, alignment: .top)
         .background(Palette.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .accessibilityLabel(French.dayTitle(day))
     }
 }

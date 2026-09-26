@@ -4,10 +4,8 @@ import SwiftUI
 struct DayLogSheet: View {
     var date: Date
     @Environment(\.modelContext) private var context
-    @Environment(\.dismiss) private var dismiss
     @Environment(Preferences.self) private var preferences
     @Query(sort: \Medication.name) private var medications: [Medication]
-    @Query(sort: \Moment.createdAt, order: .reverse) private var moments: [Moment]
     @Query(sort: \DayLog.day, order: .reverse) private var logs: [DayLog]
     @Query private var plans: [CarePlan]
 
@@ -28,8 +26,8 @@ struct DayLogSheet: View {
     @State private var factors: [String: Int] = [:]
     @State private var psychotic = false
     @State private var weight = ""
-    @State private var therapy = false
     @State private var note = ""
+    @State private var showNote = false
     @State private var marks: Set<String> = []
     @State private var doseDrafts: [String: String] = [:]
     @State private var loaded = false
@@ -37,7 +35,6 @@ struct DayLogSheet: View {
 
     private var logicalDay: Date { date.logicalDay(startHour: preferences.startHour) }
     private var activeMeds: [Medication] { medications.filter(\.isActive) }
-    private var dayMoments: [Moment] { Journal.moments(moments, on: date, startHour: preferences.startHour) }
     private var plan: CarePlan? { plans.first }
     private var yesterday: DayLog? {
         guard let previous = Calendar.current.date(byAdding: .day, value: -1, to: logicalDay) else { return nil }
@@ -47,24 +44,14 @@ struct DayLogSheet: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                Text("Le niveau le plus fort de la journée")
+                Text("Le plus fort de la journée")
                     .font(.subheadline)
                     .foregroundStyle(Palette.inkMuted)
-                if preferences.trackDepressed {
-                    ScaleRow(title: "Humeur basse", tint: Palette.depressed, yesterday: yesterday?.depressed, value: $depressed)
-                }
-                if preferences.trackElevated {
-                    ScaleRow(title: "Humeur haute", tint: Palette.elevated, yesterday: yesterday?.elevated, value: $elevated)
-                }
-                if preferences.trackIrritability {
-                    ScaleRow(title: "Irritabilité", tint: Palette.irritability, yesterday: yesterday?.irritability, value: $irritability)
-                }
-                if preferences.trackAnxiety {
-                    ScaleRow(title: "Anxiété", tint: Palette.anxiety, yesterday: yesterday?.anxiety, value: $anxiety)
-                }
-                if preferences.trackEnergy {
-                    energyBlock
-                }
+                ScaleRow(title: "Humeur basse", tint: Palette.depressed, yesterday: yesterday?.depressed, value: $depressed)
+                ScaleRow(title: "Humeur haute", tint: Palette.elevated, yesterday: yesterday?.elevated, value: $elevated)
+                ScaleRow(title: "Irritabilité", tint: Palette.irritability, yesterday: yesterday?.irritability, value: $irritability)
+                ScaleRow(title: "Anxiété", tint: Palette.anxiety, yesterday: yesterday?.anxiety, value: $anxiety)
+                energyBlock
                 sleepBlock
                 signsBlock
                 if preferences.trackRhythm {
@@ -82,9 +69,6 @@ struct DayLogSheet: View {
                         .padding(12)
                         .background(Palette.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 }
-                if preferences.trackTherapy {
-                    Toggle("Séance avec ta psy", isOn: $therapy).tint(Palette.ink)
-                }
                 ForEach(preferences.customPointNames, id: \.self) { name in
                     Toggle(name, isOn: Binding(
                         get: { marks.contains(name) },
@@ -93,44 +77,20 @@ struct DayLogSheet: View {
                     .tint(Palette.ink)
                 }
                 meds
-                TextField("Note du jour", text: $note, axis: .vertical)
-                    .lineLimit(2...5)
-                    .padding(12)
-                    .background(Palette.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                if let hours = daylightHours {
-                    Text("Lumière du jour \(Daylight.label(for: hours))")
-                        .font(.subheadline)
-                        .foregroundStyle(Palette.inkMuted)
-                }
-                if !dayMoments.isEmpty {
-                    Text("Aujourd'hui : \(dayMoments.count) moment\(dayMoments.count > 1 ? "s" : "")")
-                        .font(.subheadline)
-                        .foregroundStyle(Palette.inkMuted)
-                    ForEach(dayMoments) { moment in
-                        Text("\(French.time(moment.createdAt))  \(moment.emotionLabel)")
-                            .font(.subheadline)
-                    }
-                }
+                noteBlock
                 if yesterday != nil {
                     Text("◌ = ton niveau d'hier")
                         .font(.caption)
                         .foregroundStyle(Palette.inkFaint)
                 }
-                Button("Terminé") {
-                    persist()
-                    dismiss()
-                }
-                    .font(.headline)
-                    .foregroundStyle(Palette.background)
-                    .frame(maxWidth: .infinity, minHeight: 56)
-                    .background(Palette.ink, in: Capsule())
             }
             .padding(20)
         }
         .background(Palette.background)
-        .navigationTitle("Bilan du jour")
-        .navigationBarTitleDisplayMode(.large)
+        .navigationTitle("Bilan · \(French.shortDay(logicalDay))")
+        .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
+        .onDisappear { if ready { persist() } }
         .onChange(of: depressed) { _, _ in if ready { persist() } }
         .onChange(of: elevated) { _, _ in if ready { persist() } }
         .onChange(of: irritability) { _, _ in if ready { persist() } }
@@ -151,7 +111,6 @@ struct DayLogSheet: View {
         .onChange(of: factors) { _, _ in if ready { persist() } }
         .onChange(of: psychotic) { _, _ in if ready { persist() } }
         .onChange(of: weight) { _, _ in if ready { persist() } }
-        .onChange(of: therapy) { _, _ in if ready { persist() } }
         .onChange(of: note) { _, _ in if ready { persist() } }
         .onChange(of: marks) { _, _ in if ready { persist() } }
     }
@@ -178,6 +137,22 @@ struct DayLogSheet: View {
                         .font(.caption)
                         .foregroundStyle(Palette.inkMuted)
                 }
+            }
+            if !sleepFromHealth, bedtime == nil {
+                Button("Relier à Santé") {
+                    Task {
+                        try? await HealthService.shared.requestAccess()
+                        if let timing = await HealthService.shared.sleepTiming(for: logicalDay) {
+                            bedtime = timing.bedtime
+                            wakeTime = timing.wake
+                            _ = anchorStoredSleep()
+                            sleepFromHealth = true
+                            persist()
+                        }
+                    }
+                }
+                .font(.subheadline)
+                .foregroundStyle(Palette.ink)
             }
             HStack(spacing: 16) {
                 timeField("Coucher", selection: bedtimeBinding)
@@ -246,7 +221,7 @@ struct DayLogSheet: View {
         let signs = plan?.signs ?? []
         if !signs.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Signes remarqués aujourd'hui")
+                Text("Signes")
                     .font(.subheadline)
                     .foregroundStyle(Palette.inkMuted)
                 FlowLayout {
@@ -350,9 +325,23 @@ struct DayLogSheet: View {
         }
     }
 
-    private var daylightHours: TimeInterval? {
-        guard let latitude = preferences.latitude, let longitude = preferences.longitude else { return nil }
-        return Daylight.duration(on: logicalDay, latitude: latitude, longitude: longitude)
+    private var noteBlock: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Note du jour")
+                Spacer()
+                if note.isEmpty, !showNote {
+                    Button("Ajouter") { showNote = true }
+                        .foregroundStyle(Palette.ink)
+                }
+            }
+            if showNote || !note.isEmpty {
+                TextField("Note du jour", text: $note, axis: .vertical)
+                    .lineLimit(2...5)
+                    .padding(12)
+                    .background(Palette.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            }
+        }
     }
 
     private func load() async {
@@ -375,8 +364,8 @@ struct DayLogSheet: View {
             factors = Dictionary(uniqueKeysWithValues: existing.factors.map { ($0.key, $0.count) })
             psychotic = existing.psychoticSymptoms ?? false
             if let weightKg = existing.weightKg { weight = String(weightKg) }
-            therapy = existing.therapySession
             note = existing.note ?? ""
+            showNote = !(existing.note ?? "").isEmpty
             marks = Set(existing.customMarks)
             if anchorStoredSleep() { persist() }
         } else {
@@ -425,7 +414,7 @@ struct DayLogSheet: View {
             log.elevated = elevated
             log.irritability = irritability
             log.anxiety = anxiety
-            log.energy = preferences.trackEnergy ? energy : nil
+            log.energy = energy
             log.sleepHours = sleepHours
             log.sleepFromHealth = sleepFromHealth && !sleepEdited
             log.bedtime = bedtime
@@ -435,9 +424,12 @@ struct DayLogSheet: View {
             log.dinner = dinner
             log.signsSeen = Array(signsSeen)
             log.factors = factors.filter { $0.value > 0 }.map { FactorCount(key: $0.key, count: $0.value) }
-            log.psychoticSymptoms = preferences.trackPsychotic ? psychotic : nil
-            log.weightKg = Double(weight.replacingOccurrences(of: ",", with: "."))
-            log.therapySession = therapy
+            if preferences.trackPsychotic {
+                log.psychoticSymptoms = psychotic
+            }
+            if preferences.trackWeight {
+                log.weightKg = Double(weight.replacingOccurrences(of: ",", with: "."))
+            }
             log.note = note.isEmpty ? nil : note
             log.customMarks = Array(marks)
             try context.save()

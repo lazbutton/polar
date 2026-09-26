@@ -11,6 +11,7 @@ struct Archive: Codable {
     var safetyPlan: SafetyPlanDTO?
     var surveys: [SurveyResponseDTO]?
     var labs: [LabResultDTO]?
+    var sessions: [TherapySessionDTO]? = nil
 }
 
 struct MomentDTO: Codable {
@@ -89,6 +90,14 @@ struct SafetyPlanDTO: Codable {
     var professionals: [Contact]
     var safeEnvironment: [String]
     var reviewedAt: Date?
+    var helperIDs: [UUID]? = nil
+    var professionalIDs: [UUID]? = nil
+}
+
+struct TherapySessionDTO: Codable {
+    var date: Date
+    var done: Bool
+    var questions: [String]
 }
 
 struct SurveyResponseDTO: Codable {
@@ -116,6 +125,7 @@ enum Backup {
         let safety = try SafetyPlan.existing(in: context)
         let surveys = try context.fetch(FetchDescriptor<SurveyResponse>())
         let labs = try context.fetch(FetchDescriptor<LabResult>())
+        let sessions = try context.fetch(FetchDescriptor<TherapySession>())
 
         var medicationIDs: [PersistentIdentifier: UUID] = [:]
         let medicationDTOs = medications.map { medication -> MedicationDTO in
@@ -201,11 +211,14 @@ enum Backup {
                     helpers: $0.helpers,
                     professionals: $0.professionals,
                     safeEnvironment: $0.safeEnvironment,
-                    reviewedAt: $0.reviewedAt
+                    reviewedAt: $0.reviewedAt,
+                    helperIDs: $0.helperIDs,
+                    professionalIDs: $0.professionalIDs
                 )
             },
             surveys: surveys.map { SurveyResponseDTO(date: $0.date, instrument: $0.instrument, answers: $0.answers) },
-            labs: labs.map { LabResultDTO(date: $0.date, name: $0.name, value: $0.value, unit: $0.unit, note: $0.note) }
+            labs: labs.map { LabResultDTO(date: $0.date, name: $0.name, value: $0.value, unit: $0.unit, note: $0.note) },
+            sessions: sessions.map { TherapySessionDTO(date: $0.date, done: $0.done, questions: $0.questions) }
         )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -227,6 +240,7 @@ enum Backup {
         if let safety = try SafetyPlan.existing(in: context) { context.delete(safety) }
         for survey in try context.fetch(FetchDescriptor<SurveyResponse>()) { context.delete(survey) }
         for lab in try context.fetch(FetchDescriptor<LabResult>()) { context.delete(lab) }
+        for session in try context.fetch(FetchDescriptor<TherapySession>()) { context.delete(session) }
         try context.save()
 
         for dto in archive.moments {
@@ -316,6 +330,8 @@ enum Backup {
             safety.professionals = dto.professionals
             safety.safeEnvironment = dto.safeEnvironment
             safety.reviewedAt = dto.reviewedAt
+            safety.helperIDs = dto.helperIDs ?? []
+            safety.professionalIDs = dto.professionalIDs ?? []
             context.insert(safety)
         }
 
@@ -327,6 +343,10 @@ enum Backup {
             let lab = LabResult(name: dto.name, value: dto.value, unit: dto.unit, date: dto.date)
             lab.note = dto.note
             context.insert(lab)
+        }
+
+        for dto in archive.sessions ?? [] {
+            context.insert(TherapySession(date: dto.date, done: dto.done, questions: dto.questions))
         }
 
         try context.save()

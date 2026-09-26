@@ -9,6 +9,7 @@ struct TodayView: View {
     @Query(sort: \DayLog.day, order: .reverse) private var logs: [DayLog]
     @Query private var plans: [CarePlan]
     @Query(sort: \SurveyResponse.date, order: .reverse) private var surveys: [SurveyResponse]
+    @Query(sort: \TherapySession.date) private var sessions: [TherapySession]
 
     private var today: Date { Date.now.logicalDay(startHour: preferences.startHour) }
     private var todaysMoments: [Moment] {
@@ -30,9 +31,21 @@ struct TodayView: View {
     }
     private var eveningPending: Bool { preferences.isPastEveningReminder() && log == nil }
     private var weeklyPending: Bool {
-        guard preferences.isWeeklyDay(), !preferences.isPaused() else { return false }
-        let start = Calendar.current.date(byAdding: .day, value: -1, to: .now) ?? .now
-        return !surveys.contains { $0.date >= start }
+        WeeklySchedule.showsCard(
+            enabled: preferences.weeklyEnabled,
+            weekday: preferences.weeklyWeekday,
+            everyTwoWeeks: preferences.weeklyEveryTwoWeeks,
+            paused: preferences.isPaused(),
+            now: .now,
+            surveyDates: surveys.map(\.date)
+        )
+    }
+
+    private var sessionEve: Bool {
+        guard let next = SessionFacts.nextSession(in: sessions) else { return false }
+        let today = Date.now.logicalDay(startHour: preferences.startHour)
+        guard let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: today) else { return false }
+        return Calendar.current.isDate(next.date.logicalDay(startHour: preferences.startHour), inSameDayAs: tomorrow)
     }
 
     var body: some View {
@@ -97,6 +110,10 @@ struct TodayView: View {
                 weeklyCard
                     .journalRow(top: 6, bottom: 4)
             }
+            if sessionEve {
+                sessionCard
+                    .journalRow(top: 6, bottom: 4)
+            }
             Text("Moments")
                 .font(.headline)
                 .foregroundStyle(Palette.ink)
@@ -108,7 +125,7 @@ struct TodayView: View {
                     Text("Rien de noté aujourd'hui.")
                         .font(.subheadline)
                         .foregroundStyle(Palette.inkMuted)
-                    Text("Touche le crayon, à droite, pour en noter un.")
+                    Text("Touche Noter, en bas, pour en noter un.")
                         .font(.subheadline)
                         .foregroundStyle(Palette.inkFaint)
                 }
@@ -168,20 +185,12 @@ struct TodayView: View {
                             .foregroundStyle(Palette.inkFaint)
                     }
                     HStack(alignment: .top, spacing: 8) {
-                        if preferences.trackDepressed {
-                            GlanceGauge(title: "Humeur basse", level: log.depressed, color: Palette.depressed)
-                        }
-                        if preferences.trackElevated {
-                            GlanceGauge(title: "Humeur haute", level: log.elevated, color: Palette.elevated)
-                        }
-                        if preferences.trackIrritability {
-                            GlanceGauge(title: "Irritabilité", level: log.irritability, color: Palette.irritability)
-                        }
-                        if preferences.trackAnxiety {
-                            GlanceGauge(title: "Anxiété", level: log.anxiety, color: Palette.anxiety)
-                        }
+                        GlanceGauge(title: "Humeur basse", level: log.depressed, color: Palette.depressed)
+                        GlanceGauge(title: "Humeur haute", level: log.elevated, color: Palette.elevated)
+                        GlanceGauge(title: "Irritabilité", level: log.irritability, color: Palette.irritability)
+                        GlanceGauge(title: "Anxiété", level: log.anxiety, color: Palette.anxiety)
                     }
-                    if preferences.trackEnergy, let energy = log.energy {
+                    if let energy = log.energy {
                         Text("Énergie \(EnergyRow.word(energy))")
                             .font(.caption)
                             .foregroundStyle(Palette.inkMuted)
@@ -215,11 +224,34 @@ struct TodayView: View {
         if let hours = log.resolvedSleepHours {
             parts.append("Sommeil \(French.sleep(hours))")
         }
-        if preferences.trackDepressed { parts.append("Humeur basse \(DayLevel.word(log.depressed))") }
-        if preferences.trackElevated { parts.append("Humeur haute \(DayLevel.word(log.elevated))") }
-        if preferences.trackIrritability { parts.append("Irritabilité \(DayLevel.word(log.irritability))") }
-        if preferences.trackAnxiety { parts.append("Anxiété \(DayLevel.word(log.anxiety))") }
+        parts.append("Humeur basse \(French.level(log.depressed))")
+        parts.append("Humeur haute \(French.level(log.elevated))")
+        parts.append("Irritabilité \(French.level(log.irritability))")
+        parts.append("Anxiété \(French.level(log.anxiety))")
         return parts.joined(separator: ", ")
+    }
+
+    private var sessionCard: some View {
+        Button { router.push(.forPsy) } label: {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Pour ma psy")
+                        .font(.headline)
+                        .foregroundStyle(Palette.ink)
+                    Text("Séance demain")
+                        .font(.subheadline)
+                        .foregroundStyle(Palette.inkMuted)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Palette.inkFaint)
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Palette.background, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        }
+        .buttonStyle(.plain)
     }
 
     private var weeklyCard: some View {
@@ -323,7 +355,14 @@ struct TodayView: View {
                     }
                 }
                 HStack(spacing: 16) {
-                    Button("Voir mon plan") { router.openPlan() }
+                    Button("Voir mon plan") {
+                        if let pole = hit.pole {
+                            router.push(.pole(pole, stage: hit.stage))
+                        } else {
+                            router.tab = .plan
+                            router.plan = []
+                        }
+                    }
                         .frame(minHeight: 44)
                     if let phone = plan?.contacts.first?.digits, !phone.isEmpty, let url = URL(string: "tel:\(phone)") {
                         Link("Appeler", destination: url)
@@ -371,7 +410,7 @@ private struct GlanceGauge: View {
                 .lineLimit(2)
                 .minimumScaleFactor(0.75)
                 .frame(maxWidth: .infinity, minHeight: 32, alignment: .topLeading)
-            Text(DayLevel.word(level))
+            Text(French.level(level))
                 .font(.caption.weight(level == 0 ? .regular : .semibold))
                 .foregroundStyle(level == 0 ? Palette.inkFaint : Palette.ink)
                 .lineLimit(1)
@@ -387,18 +426,10 @@ private struct GlanceGauge: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(title), \(DayLevel.word(level))")
+        .accessibilityLabel("\(title), \(French.level(level))")
     }
 
     private var mark: Color { level == 0 ? Palette.inkFaint : color }
-}
-
-private enum DayLevel {
-    static let words = ["Aucun", "Léger", "Modéré", "Sévère"]
-
-    static func word(_ level: Int) -> String {
-        words[min(max(level, 0), 3)]
-    }
 }
 
 private extension View {

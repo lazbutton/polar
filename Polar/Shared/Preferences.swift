@@ -59,8 +59,11 @@ final class Preferences {
     var appearance: AppearanceMode
     var nightStartHour: Int
     var alertRules: [AlertRule]
-    var latitude: Double?
-    var longitude: Double?
+    var hapticsEnabled: Bool
+    var didFinishOnboarding: Bool
+    var historyShowsCharts: Bool
+    var chartSpanDays: Int
+    var includeThoughtsInPDF: Bool
 
     init(defaults: UserDefaults? = nil) {
         let store = defaults ?? UserDefaults(suiteName: SharedStore.appGroupIdentifier) ?? .standard
@@ -105,12 +108,20 @@ final class Preferences {
         } else {
             alertRules = []
         }
-        latitude = store.object(forKey: Keys.latitude) as? Double
-        longitude = store.object(forKey: Keys.longitude) as? Double
+        hapticsEnabled = store.object(forKey: Keys.hapticsEnabled) as? Bool ?? true
+        historyShowsCharts = store.bool(forKey: Keys.historyShowsCharts)
+        chartSpanDays = store.object(forKey: Keys.chartSpanDays) as? Int ?? 30
+        includeThoughtsInPDF = store.bool(forKey: Keys.includeThoughtsInPDF)
+        if let stored = store.object(forKey: Keys.didFinishOnboarding) as? Bool {
+            didFinishOnboarding = stored
+        } else {
+            didFinishOnboarding = false
+        }
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("-polarUITest") {
             faceIDEnabled = false
             blurInSwitcher = false
+            didFinishOnboarding = true
         }
         #endif
     }
@@ -153,8 +164,11 @@ final class Preferences {
         if let data = try? JSONEncoder().encode(alertRules) {
             defaults.set(data, forKey: Keys.alertRules)
         }
-        defaults.set(latitude, forKey: Keys.latitude)
-        defaults.set(longitude, forKey: Keys.longitude)
+        defaults.set(hapticsEnabled, forKey: Keys.hapticsEnabled)
+        defaults.set(didFinishOnboarding, forKey: Keys.didFinishOnboarding)
+        defaults.set(historyShowsCharts, forKey: Keys.historyShowsCharts)
+        defaults.set(chartSpanDays, forKey: Keys.chartSpanDays)
+        defaults.set(includeThoughtsInPDF, forKey: Keys.includeThoughtsInPDF)
     }
 
     var eveningDate: Date {
@@ -243,7 +257,10 @@ final class Preferences {
         static let appearance = "appearance"
         static let nightStartHour = "nightStartHour"
         static let alertRules = "alertRules"
-        static let latitude = "latitude"
-        static let longitude = "longitude"
+        static let hapticsEnabled = "hapticsEnabled"
+        static let didFinishOnboarding = "didFinishOnboarding"
+        static let historyShowsCharts = "historyShowsCharts"
+        static let chartSpanDays = "chartSpanDays"
+        static let includeThoughtsInPDF = "includeThoughtsInPDF"
     }
 }

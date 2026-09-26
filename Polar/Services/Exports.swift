@@ -48,7 +48,7 @@ enum CSVExport {
 enum PDFReport {
     @MainActor
     static func make(
-        month: Date,
+        title: String,
         logs: [DayLog],
         moments: [Moment],
         includeThoughts: Bool,
@@ -56,15 +56,14 @@ enum PDFReport {
     ) -> Data {
         let page = CGRect(x: 0, y: 0, width: 595, height: 842)
         let renderer = UIGraphicsPDFRenderer(bounds: page)
-        let calendar = Calendar.current
-        let monthLogs = logs.filter { calendar.isDate($0.day, equalTo: month, toGranularity: .month) }
-        let monthMoments = moments.filter { calendar.isDate($0.createdAt, equalTo: month, toGranularity: .month) }
+        let monthLogs = logs
+        let monthMoments = moments
         return renderer.pdfData { context in
             draw(page: page, in: context) {
                 VStack(alignment: .leading, spacing: 16) {
                     Text("Polar")
                         .font(.largeTitle.weight(.semibold))
-                    Text(French.monthTitle(month))
+                    Text(title)
                         .font(.title2)
                         .foregroundStyle(Palette.inkMuted)
                     LifeChart(logs: monthLogs, height: 220)

@@ -8,8 +8,10 @@ final class SafetyPlan {
     var warningSigns: [String] = []     // 1. mes signes d'alerte
     var copingAlone: [String] = []      // 2. me calmer seul
     var distractions: [String] = []     // 3. personnes et lieux qui apaisent
-    var helpers: [Contact] = []         // 4. qui peut m'aider
-    var professionals: [Contact] = []   // 5. professionnels et urgences
+    var helpers: [Contact] = []         // 4. conservé pour la migration 0.2
+    var professionals: [Contact] = []   // 5. conservé pour la migration 0.2
+    var helperIDs: [UUID] = []          // 4. identifiants dans CarePlan.contacts
+    var professionalIDs: [UUID] = []    // 5. identifiants dans CarePlan.contacts
     var safeEnvironment: [String] = []  // 6. rendre mon environnement sûr
     var reviewedAt: Date?
 

@@ -2,9 +2,15 @@ import Foundation
 
 /// Faits factuels pour Préparer ma séance et le rapport. Aucun jugement, aucune tendance.
 enum SessionFacts {
-    /// Date de la dernière séance saisie (dernier bilan où « Séance avec ta psy » est coché).
-    static func lastSessionDate(logs: [DayLog]) -> Date? {
-        logs.filter(\.therapySession).map(\.day).max()
+    /// Dernière séance faite. Les séances 0.3 priment ; les bilans 0.2 restent en secours.
+    static func lastSessionDate(logs: [DayLog], sessions: [TherapySession] = []) -> Date? {
+        let fromSessions = sessions.filter(\.done).map(\.date).max()
+        let fromLogs = logs.filter(\.therapySession).map(\.day).max()
+        return [fromSessions, fromLogs].compactMap { $0 }.max()
+    }
+
+    static func nextSession(in sessions: [TherapySession]) -> TherapySession? {
+        sessions.filter { !$0.done }.sorted { $0.date < $1.date }.first
     }
 
     static func lines(
