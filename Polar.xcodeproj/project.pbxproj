@@ -513,7 +513,6 @@
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "Polar se verrouille avec Face ID, ou avec le code de l'iPhone.";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Polar lit ton sommeil dans Santé pour préremplir le bilan.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Polar écrit tes émotions dans Santé, si tu l'autorises.";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Polar calcule la durée de lumière du jour là où tu es. La position reste sur l'iPhone.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Polar transcrit ce que tu dis, sur l'iPhone, pour remplir un moment.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Polar transforme ta voix en texte, sur l'iPhone.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -546,7 +545,6 @@
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "Polar se verrouille avec Face ID, ou avec le code de l'iPhone.";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Polar lit ton sommeil dans Santé pour préremplir le bilan.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Polar écrit tes émotions dans Santé, si tu l'autorises.";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Polar calcule la durée de lumière du jour là où tu es. La position reste sur l'iPhone.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Polar transcrit ce que tu dis, sur l'iPhone, pour remplir un moment.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Polar transforme ta voix en texte, sur l'iPhone.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;

@@ -104,7 +104,7 @@ final class ToastCenter {
         undoAction = undo
         dismissTask?.cancel()
         dismissTask = Task {
-            try? await Task.sleep(for: .seconds(4))
+            try? await Task.sleep(for: .seconds(5))
             guard !Task.isCancelled else { return }
             self.message = nil
             undoAction = nil

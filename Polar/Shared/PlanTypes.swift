@@ -60,19 +60,55 @@ struct PlanAction: Codable, Hashable, Identifiable {
     }
 }
 
+/// Rôle d'un contact dans la liste unique. Optionnel : les contacts 0.2 n'en ont pas.
+enum ContactRole: String, Codable, Hashable {
+    case trusted, therapist, doctor, other
+
+    var label: String {
+        switch self {
+        case .trusted: "Personne de confiance"
+        case .therapist: "Psy"
+        case .doctor: "Médecin"
+        case .other: "Autre"
+        }
+    }
+}
+
 /// Un contact : personne de confiance, psy, médecin, urgences.
 struct Contact: Codable, Hashable, Identifiable {
     var id = UUID()
     var name: String
     var phone: String
+    var role: ContactRole?
 
-    init(id: UUID = UUID(), name: String, phone: String) {
+    init(id: UUID = UUID(), name: String, phone: String, role: ContactRole? = nil) {
         self.id = id
         self.name = name
         self.phone = phone
+        self.role = role
     }
 
     var digits: String { phone.filter { $0.isNumber || $0 == "+" } }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, phone, role
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        name = try container.decodeIfPresent(String.self, forKey: .name) ?? ""
+        phone = try container.decodeIfPresent(String.self, forKey: .phone) ?? ""
+        role = try container.decodeIfPresent(ContactRole.self, forKey: .role)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encode(phone, forKey: .phone)
+        try container.encodeIfPresent(role, forKey: .role)
+    }
 }
 
 /// Un facteur du jour compté (café, alcool, conflit…).

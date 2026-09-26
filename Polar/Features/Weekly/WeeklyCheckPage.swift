@@ -4,7 +4,6 @@ import SwiftUI
 /// Point de la semaine : PHQ-9, ASRM, puis GAD-7 en option. Une question par écran.
 struct WeeklyCheckPage: View {
     @Environment(\.modelContext) private var context
-    @Environment(\.dismiss) private var dismiss
     @Environment(Preferences.self) private var preferences
     @Environment(CaptureRouter.self) private var router
 
@@ -101,11 +100,6 @@ struct WeeklyCheckPage: View {
                 .font(.caption)
                 .foregroundStyle(Palette.inkFaint)
             Spacer()
-            Button("Terminé") { dismiss() }
-                .font(.headline)
-                .foregroundStyle(Palette.background)
-                .frame(maxWidth: .infinity, minHeight: 56)
-                .background(Palette.ink, in: Capsule())
         }
         .padding(20)
     }

@@ -35,7 +35,7 @@ enum Reminders {
             identifier: ReminderKind.noteAction,
             title: "Un mot sur ma journée",
             options: [.authenticationRequired],
-            textInputButtonTitle: "Enregistrer",
+            textInputButtonTitle: "Terminé",
             textInputPlaceholder: "Un mot sur ta journée"
         )
         let evening = UNNotificationCategory(

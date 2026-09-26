@@ -6,120 +6,134 @@ struct RootView: View {
     @Environment(\.undoManager) private var undoManager
     @Environment(\.scenePhase) private var scenePhase
     @Environment(Preferences.self) private var preferences
-    @Environment(CaptureRouter.self) private var router
+    @Environment(Router.self) private var router
     @Environment(AppLock.self) private var lock
     @Query private var moments: [Moment]
     @Query private var medications: [Medication]
-
-    @State private var tab = HomeTab.today
+    @Query private var plans: [CarePlan]
+    @Query private var safeties: [SafetyPlan]
 
     var body: some View {
         @Bindable var router = router
-        NavigationStack(path: $router.path) {
-            tabs
-                .toolbar(.hidden, for: .navigationBar)
-                .navigationDestination(for: AppRoute.self) { route in
-                    destination(route)
-                        .toolbar(.visible, for: .navigationBar)
-                        .toolbarBackground(Palette.background, for: .navigationBar)
+        tabs
+            .tint(Palette.ink)
+            .sheet(item: $router.fill) { fill in
+                FillView(fill: fill)
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
+            }
+            .fullScreenCover(isPresented: $router.isPresenting) {
+                PresentationView()
+            }
+            .overlay(alignment: .bottom) {
+                ToastOverlay(center: ToastCenter.shared)
+            }
+            .overlay {
+                if lock.isLocked {
+                    lockScreen
                 }
-        }
-        .tint(Palette.ink)
-        .overlay(alignment: .bottom) {
-            ToastOverlay(center: ToastCenter.shared)
-        }
-        .overlay {
-            if lock.isLocked {
-                lockScreen
             }
-        }
-        .overlay {
-            if scenePhase != .active, preferences.blurInSwitcher {
-                Palette.surface.ignoresSafeArea()
+            .overlay {
+                if !preferences.didFinishOnboarding {
+                    OnboardingView()
+                }
             }
-        }
-        .task(id: router.captureRequest) {
-            await openPendingCapture()
-        }
-        .onChange(of: scenePhase) { _, phase in
-            lock.grace = preferences.graceDelay
-            switch phase {
-            case .active:
-                if preferences.faceIDEnabled {
-                    if lock.shouldLockOnForeground() {
-                        lock.lockIfNeeded(enabled: true)
+            .overlay {
+                if scenePhase != .active, preferences.blurInSwitcher {
+                    Palette.surface.ignoresSafeArea()
+                }
+            }
+            .onChange(of: scenePhase) { _, phase in
+                lock.grace = preferences.graceDelay
+                switch phase {
+                case .active:
+                    if preferences.faceIDEnabled, preferences.didFinishOnboarding {
+                        if lock.shouldLockOnForeground() {
+                            lock.lockIfNeeded(enabled: true)
+                        }
+                        lock.unlock()
+                    } else {
+                        lock.lockIfNeeded(enabled: false)
                     }
-                    lock.unlock()
-                } else {
-                    lock.lockIfNeeded(enabled: false)
-                }
-            case .background:
-                lock.noteBackground()
-            default:
-                break
-            }
-        }
-        .task {
-            lock.grace = preferences.graceDelay
-            if preferences.faceIDEnabled {
-                lock.lockIfNeeded(enabled: true)
-                if scenePhase == .active {
-                    lock.unlock()
+                case .background:
+                    lock.noteBackground()
+                default:
+                    break
                 }
             }
-            context.undoManager = undoManager
-            Migration.runIfNeeded(in: context)
-            QuickAction.install()
-            Reminders.registerCategories()
-            WatchBridge.shared.activate()
-            await HealthSync.catchUp(moments: moments, in: context)
-            await Reminders.reschedule(medications: medications)
-        }
-        .preferredColorScheme(scheme)
-    }
-
-    @ViewBuilder
-    private func destination(_ route: AppRoute) -> some View {
-        switch route {
-        case .moment(let id, let voice):
-            CaptureSheet(momentID: id, voice: voice)
-        case .day(let date):
-            DayLogSheet(date: date)
-        case .safetyPlan:
-            SafetyPlanPage()
-        case .settings:
-            SettingsView()
-        case .plan:
-            CarePlanView()
-        case .weeklyCheck:
-            WeeklyCheckPage()
-        case .session:
-            SessionPage()
-        case .medication(let id):
-            MedicationForm(medicationID: id)
-        }
+            .onChange(of: ToastCenter.shared.message) { _, message in
+                guard message != nil else { return }
+                undoManager?.registerUndo(withTarget: ToastCenter.shared) { center in
+                    MainActor.assumeIsolated { center.undo() }
+                }
+            }
+            .task {
+                lock.grace = preferences.graceDelay
+                if preferences.faceIDEnabled, preferences.didFinishOnboarding {
+                    lock.lockIfNeeded(enabled: true)
+                    if scenePhase == .active {
+                        lock.unlock()
+                    }
+                }
+                context.undoManager = undoManager
+                Migration.runIfNeeded(in: context)
+                QuickAction.install()
+                Reminders.registerCategories()
+                WatchBridge.shared.activate()
+                await HealthSync.catchUp(moments: moments, in: context)
+                await Reminders.reschedule(medications: medications)
+            }
+            .preferredColorScheme(scheme)
     }
 
     private var tabs: some View {
-        TabView(selection: $tab) {
-            Tab("Aujourd'hui", systemImage: "sun.max", value: HomeTab.today) { TodayView() }
-            Tab("Calendrier", systemImage: "calendar", value: HomeTab.calendar) { MonthView() }
-            Tab("Tendances", systemImage: "chart.xyaxis.line", value: HomeTab.trends) { TrendsView() }
-            if #available(iOS 27, *) {
-                Tab("Écrire", systemImage: "square.and.pencil", value: HomeTab.write, role: .prominent) {
-                    Color.clear
+        @Bindable var router = router
+        return TabView(selection: selection) {
+            Tab("Aujourd'hui", systemImage: "sun.max", value: AppTab.today) {
+                NavigationStack(path: $router.today) {
+                    TodayView()
+                        .navigationTitle("Aujourd'hui")
+                        .toolbar(.hidden, for: .navigationBar)
+                        .pages()
                 }
+            }
+            Tab("Historique", systemImage: "calendar", value: AppTab.history) {
+                NavigationStack(path: $router.history) {
+                    HistoryView()
+                        .pages()
+                }
+            }
+            Tab("Mon plan", systemImage: "list.bullet.clipboard", value: AppTab.plan) {
+                NavigationStack(path: $router.plan) {
+                    PlanView()
+                        .pages()
+                }
+            }
+            Tab(value: AppTab.compose) {
+                Color.clear
+            } label: {
+                Label("Noter", systemImage: "square.and.pencil")
+                    .accessibilityLabel("Noter un moment")
             }
         }
         .tabBarMinimizeBehavior(.onScrollDown)
-        .onChange(of: tab) { previous, next in
-            guard next == .write else { return }
-            if !lock.isLocked {
-                router.openCapture()
-            }
-            tab = previous == .write ? .today : previous
-        }
         .tint(Palette.ink)
+    }
+
+    /// Noter ne devient jamais l'onglet actif : il ouvre un moment.
+    private var selection: Binding<AppTab> {
+        Binding(
+            get: { router.tab },
+            set: { tab in
+                if tab == .compose {
+                    if !lock.isLocked {
+                        router.present(.moment(nil))
+                    }
+                } else {
+                    router.tab = tab
+                }
+            }
+        )
     }
 
     private var lockScreen: some View {
@@ -129,6 +143,7 @@ struct RootView: View {
                 .foregroundStyle(Palette.ink)
             Text("Polar")
                 .font(.largeTitle.weight(.semibold))
+            callRow
             Button("Ouvrir") { lock.unlock() }
                 .frame(minHeight: 56)
         }
@@ -136,16 +151,22 @@ struct RootView: View {
         .background(Palette.background)
     }
 
-    private func openPendingCapture() async {
-        guard let token = router.captureRequest else { return }
-        let voice = router.captureVoice
-        let moment = Moment(source: voice ? "voix" : "app")
-        context.insert(moment)
-        try? context.save()
-        router.openMoment(moment.persistentModelID, voice: voice)
-        if router.captureRequest == token {
-            router.captureRequest = nil
+    private var callRow: some View {
+        let targets = LockCalls.targets(plan: plans.first, safety: safeties.first)
+        return VStack(spacing: 8) {
+            ForEach(targets, id: \.title) { target in
+                if let url = URL(string: "tel:\(target.digits)") {
+                    Link(destination: url) {
+                        Text(target.title)
+                            .font(.headline)
+                            .foregroundStyle(Palette.ink)
+                            .frame(maxWidth: .infinity, minHeight: 56)
+                            .background(Palette.surface, in: Capsule())
+                    }
+                }
+            }
         }
+        .padding(.horizontal, 24)
     }
 
     private var scheme: ColorScheme? {
@@ -157,6 +178,72 @@ struct RootView: View {
     }
 }
 
-private enum HomeTab: Hashable {
-    case today, calendar, trends, write
+enum LockCalls {
+    struct Target: Hashable {
+        var title: String
+        var digits: String
+    }
+
+    static func targets(plan: CarePlan?, safety: SafetyPlan?) -> [Target] {
+        let contacts = plan?.contacts ?? []
+        func phone(_ ids: [UUID], role: ContactRole, fallback: [Contact]) -> String {
+            let resolved = ids.compactMap { id in contacts.first { $0.id == id } }
+            let pool = resolved.isEmpty ? fallback : resolved
+            if let match = pool.first(where: { $0.role == role && !$0.digits.isEmpty }) ?? pool.first(where: { !$0.digits.isEmpty }) {
+                return match.digits
+            }
+            if let named = contacts.first(where: { $0.role == role && !$0.digits.isEmpty }) {
+                return named.digits
+            }
+            return ""
+        }
+        var targets: [Target] = []
+        let person = phone(safety?.helperIDs ?? [], .trusted, safety?.helpers ?? [])
+        let therapist = phone(safety?.professionalIDs ?? [], .therapist, safety?.professionals ?? [])
+        if !person.isEmpty { targets.append(Target(title: "Ma personne", digits: person)) }
+        if !therapist.isEmpty { targets.append(Target(title: "Ma psy", digits: therapist)) }
+        targets.append(Target(title: "3114", digits: "3114"))
+        targets.append(Target(title: "15", digits: "15"))
+        return targets
+    }
+}
+
+extension View {
+    /// Les pages sont déclarées une fois et servent aux trois piles.
+    func pages() -> some View {
+        navigationDestination(for: Page.self) { page in
+            PageView(page: page)
+                .toolbar(.visible, for: .navigationBar)
+                .toolbarBackground(Palette.background, for: .navigationBar)
+        }
+    }
+}
+
+struct PageView: View {
+    let page: Page
+
+    var body: some View {
+        switch page {
+        case .day(let date):
+            DayPage(day: date)
+        case .forPsy:
+            ForPsyPage()
+        case .settings:
+            SettingsView()
+        case .safetyPlan:
+            SafetyPlanPage()
+        case .pole(let pole, let stage):
+            PolePage(pole: pole, focus: stage)
+        case .toClassify:
+            ToClassifyPage()
+        case .medication(let id):
+            MedicationPage(medicationID: id)
+        case .labResults:
+            LabResultsPage()
+        case .resources:
+            ResourcesPage()
+        case .contact(let id):
+            ContactPage(contactID: id)
+        }
+    }
 }

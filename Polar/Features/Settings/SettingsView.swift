@@ -1,4 +1,3 @@
-import CoreLocation
 import SwiftData
 import SwiftUI
 import UniformTypeIdentifiers
@@ -8,266 +7,240 @@ struct SettingsView: View {
     @Environment(Preferences.self) private var preferences
     @Query(sort: \Medication.name) private var medications: [Medication]
     @State private var showImporter = false
-    @State private var location = LocationReader()
+    @State private var pendingImport: Data?
+    @State private var confirmImport = false
+    @State private var confirmErase = false
+    @State private var exportItem: ShareFile?
+    @State private var newQuestion = ""
 
     var body: some View {
         @Bindable var preferences = preferences
         Form {
-                Section("Traitements") {
-                    ForEach(medications) { medication in
-                        NavigationLink(value: AppRoute.medication(medication.persistentModelID)) {
-                            VStack(alignment: .leading) {
-                                Text(medication.name)
-                                    .foregroundStyle(medication.isActive ? Palette.ink : Palette.inkMuted)
-                                Text("\(medication.dose) · \(medication.slot)\(medication.isActive ? "" : " · archivé")")
-                                    .font(.caption)
-                                    .foregroundStyle(Palette.inkMuted)
-                            }
-                        }
-                    }
-                    NavigationLink("Ajouter", value: AppRoute.medication(nil))
-                    if preferences.trackLabs {
-                        NavigationLink("Analyses") { LabsView() }
-                    }
+            Section {
+                DatePicker("Rappel du soir", selection: eveningBinding, displayedComponents: .hourAndMinute)
+                    .onChange(of: preferences.eveningHour) { _, _ in reschedule(request: true) }
+                    .onChange(of: preferences.eveningMinute) { _, _ in reschedule(request: true) }
+                Stepper(value: $preferences.startHour, in: 0...10) {
+                    Text("La journée commence à \(preferences.startHour):00")
                 }
-                Section("Points suivis") {
-                    Toggle("Humeur basse", isOn: $preferences.trackDepressed)
-                    Toggle("Humeur haute", isOn: $preferences.trackElevated)
-                    Toggle("Irritabilité", isOn: $preferences.trackIrritability)
-                    Toggle("Anxiété", isOn: $preferences.trackAnxiety)
-                    Toggle("Énergie", isOn: $preferences.trackEnergy)
-                    Toggle("Rythme du jour", isOn: $preferences.trackRhythm)
-                    Toggle("Facteurs", isOn: $preferences.trackFactors)
-                    Toggle("Analyses", isOn: $preferences.trackLabs)
-                    Toggle("Symptômes psychotiques", isOn: $preferences.trackPsychotic)
-                    Toggle("Poids", isOn: $preferences.trackWeight)
-                    Toggle("Séance", isOn: $preferences.trackTherapy)
-                    customPoints
+                .onChange(of: preferences.startHour) { _, _ in preferences.save() }
+                Toggle("Rythme du jour", isOn: $preferences.trackRhythm)
+                Toggle("Facteurs", isOn: $preferences.trackFactors)
+                Toggle("Symptômes psychotiques", isOn: $preferences.trackPsychotic)
+                Toggle("Poids", isOn: $preferences.trackWeight)
+                HStack {
+                    TextField("Ajouter une question", text: $newQuestion)
+                    Button("OK") { addQuestion() }
+                        .disabled(newQuestion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
-                Section("Point de la semaine") {
-                    Toggle("Activer", isOn: $preferences.weeklyEnabled)
-                    if preferences.weeklyEnabled {
-                        Picker("Jour", selection: $preferences.weeklyWeekday) {
-                            ForEach(1...7, id: \.self) { day in
-                                Text(Preferences.weekdayNames[day] ?? "").tag(day)
-                            }
-                        }
-                        Toggle("Toutes les deux semaines", isOn: $preferences.weeklyEveryTwoWeeks)
-                        Toggle("GAD-7 en plus", isOn: $preferences.includeGAD7)
-                    }
+                ForEach(preferences.customPointNames, id: \.self) { name in
+                    Text(name)
                 }
-                Section("Signaux") {
-                    NavigationLink("Régler les signaux") { SignalsView() }
-                }
-                Section("Affichage") {
-                    Toggle("Mode discret", isOn: $preferences.discreetMode)
-                    Text("Le mode discret masque les courbes et les constats ; le calendrier reste.")
-                        .font(.caption)
-                        .foregroundStyle(Palette.inkMuted)
-                    Toggle("Pause du suivi", isOn: Binding(
-                        get: { preferences.isPaused() },
-                        set: { on in
-                            preferences.pauseUntil = on ? Calendar.current.date(byAdding: .day, value: 14, to: .now) : nil
-                            preferences.save()
-                        }
-                    ))
-                    if preferences.isPaused(), let until = preferences.pauseUntil {
-                        DatePicker("Jusqu'au", selection: Binding(
-                            get: { until },
-                            set: { preferences.pauseUntil = $0; preferences.save() }
-                        ), displayedComponents: .date)
-                    }
-                }
-                Section("Rappels") {
-                    Toggle("Bilan du soir", isOn: $preferences.eveningReminderEnabled)
-                    Stepper("Heure \(preferences.eveningHour) h \(preferences.eveningMinute)", value: $preferences.eveningHour, in: 0...23)
-                    Toggle("Textes neutres sur l'écran verrouillé", isOn: $preferences.neutralNotifications)
-                }
-                Section("Journée") {
-                    Stepper("Bascule à \(preferences.startHour) h", value: $preferences.startHour, in: 0...10)
-                }
-                Section {
-                    NavigationLink("Mon plan", value: AppRoute.plan)
-                }
-                Section("Confidentialité") {
-                    Toggle("Face ID à l'ouverture", isOn: $preferences.faceIDEnabled)
-                    if preferences.faceIDEnabled {
-                        Picker("Délai de grâce", selection: $preferences.graceDelay) {
-                            Text("Immédiat").tag(0.0)
-                            Text("1 min").tag(60.0)
-                            Text("5 min").tag(300.0)
-                            Text("15 min").tag(900.0)
-                        }
-                    }
-                    Toggle("Flou dans le sélecteur d'apps", isOn: $preferences.blurInSwitcher)
-                    Toggle("Synchro iCloud", isOn: $preferences.cloudKitEnabled)
-                    Text("Relance Polar pour appliquer la synchro. Elle reste coupée si iCloud n'est pas autorisé.")
-                        .font(.caption)
-                        .foregroundStyle(Palette.inkMuted)
-                }
-                Section("Santé") {
-                    Toggle("Écrire les émotions dans Santé", isOn: $preferences.healthWriteEnabled)
-                    Button("Autoriser Santé") {
-                        Task { try? await HealthService.shared.requestAccess() }
-                    }
-                }
-                Section("Compagnon") {
-                    Toggle("Phrases", isOn: $preferences.companionPhrases)
-                    Toggle("IA sur l'appareil", isOn: $preferences.aiEnabled)
-                }
-                Section("Apparence") {
-                    Picker("Mode", selection: $preferences.appearance) {
-                        ForEach(AppearanceMode.allCases) { Text($0.label).tag($0) }
-                    }
-                    if preferences.appearance == .automaticNight {
-                        Stepper("Nuit à partir de \(preferences.nightStartHour) h", value: $preferences.nightStartHour, in: 18...23)
-                    }
-                }
-                Section("Puces de comportement") {
-                    ForEach(preferences.behaviorTags, id: \.self) { tag in
-                        Text(tag)
-                    }
-                    .onDelete { preferences.behaviorTags.remove(atOffsets: $0) }
-                    Button("Revenir aux puces d'origine") {
-                        preferences.behaviorTags = Preferences.defaultBehaviorTags
-                    }
-                }
-                Section("Données") {
-                    Button("Importer une sauvegarde JSON") { showImporter = true }
-                    Button("Lumière du jour, position approximative") {
-                        location.onUpdate = { place in
-                            preferences.latitude = place.coordinate.latitude
-                            preferences.longitude = place.coordinate.longitude
-                            preferences.save()
-                        }
-                        location.request()
-                    }
-                }
-                Section("Ressources") {
-                    Link("3114, prévention du suicide", destination: URL(string: "https://3114.fr")!)
-                    Link("Fondation FondaMental", destination: URL(string: "https://www.fondation-fondamental.org")!)
-                    Link("Psycom", destination: URL(string: "https://www.psycom.org")!)
-                    Link("Argos 2001", destination: URL(string: "https://www.argos2001.fr")!)
-                    Link("Unafam", destination: URL(string: "https://www.unafam.org")!)
-                }
-                .tint(Palette.ink)
+                .onDelete { preferences.customPointNames.remove(atOffsets: $0); preferences.save() }
+            } header: {
+                Text("Bilan du jour").accessibilityAddTraits(.isHeader)
+            } footer: {
+                Text("Questions en plus")
             }
-            .navigationTitle("Réglages")
-            .tint(Palette.ink)
-            .onChange(of: preferences.eveningReminderEnabled) { _, _ in reschedule() }
-            .onChange(of: preferences.eveningHour) { _, _ in reschedule() }
-            .onDisappear { preferences.save() }
-            .fileImporter(isPresented: $showImporter, allowedContentTypes: [.json]) { result in
-                guard let url = try? result.get(),
-                      url.startAccessingSecurityScopedResource() else { return }
-                defer { url.stopAccessingSecurityScopedResource() }
-                if let data = try? Data(contentsOf: url) {
-                    try? Backup.replace(data: data, in: context)
-                }
-            }
-    }
+            .headerProminence(.increased)
 
-    private var customPoints: some View {
-        ForEach(preferences.customPointNames, id: \.self) { name in
-            Text(name)
+            Section {
+                Toggle("Activé", isOn: $preferences.weeklyEnabled)
+                Picker("Jour", selection: $preferences.weeklyWeekday) {
+                    ForEach(1...7, id: \.self) { day in
+                        Text(Preferences.weekdayNames[day] ?? "").tag(day)
+                    }
+                }
+                Toggle("Toutes les deux semaines", isOn: $preferences.weeklyEveryTwoWeeks)
+                Toggle("Anxiété (GAD-7)", isOn: $preferences.includeGAD7)
+            } header: {
+                Text("Point de la semaine").accessibilityAddTraits(.isHeader)
+            }
+            .headerProminence(.increased)
+
+            Section {
+                Toggle("Face ID", isOn: $preferences.faceIDEnabled)
+                Picker("Délai avant Face ID", selection: $preferences.graceDelay) {
+                    Text("Immédiat").tag(0.0)
+                    Text("1 min").tag(60.0)
+                    Text("5 min").tag(300.0)
+                    Text("15 min").tag(900.0)
+                }
+                Toggle("Flou dans le sélecteur d'apps", isOn: $preferences.blurInSwitcher)
+                Toggle("Notifications discrètes", isOn: $preferences.neutralNotifications)
+            } header: {
+                Text("Confidentialité").accessibilityAddTraits(.isHeader)
+            }
+            .headerProminence(.increased)
+
+            Section {
+                Button("Accès à Santé") {
+                    Task { try? await HealthService.shared.requestAccess() }
+                }
+                Toggle("Écrire mes émotions dans Santé", isOn: $preferences.healthWriteEnabled)
+                Toggle("IA sur l'iPhone", isOn: $preferences.aiEnabled)
+                Toggle("iCloud", isOn: $preferences.cloudKitEnabled)
+                Text("Relance Polar pour appliquer la synchro.")
+                    .font(.caption)
+                    .foregroundStyle(Palette.inkMuted)
+                Button("Sauvegarder") { exportJSON() }
+                Button("Restaurer une sauvegarde") { showImporter = true }
+                Button("Exporter en CSV") { exportCSV() }
+                Button("Effacer toutes les données", role: .destructive) { confirmErase = true }
+            } header: {
+                Text("Santé et données").accessibilityAddTraits(.isHeader)
+            }
+            .headerProminence(.increased)
+
+            Section {
+                Picker("Apparence", selection: $preferences.appearance) {
+                    ForEach(AppearanceMode.allCases) { Text($0.label).tag($0) }
+                }
+                if preferences.appearance == .automaticNight {
+                    Stepper("Nuit à partir de \(preferences.nightStartHour) h", value: $preferences.nightStartHour, in: 18...23)
+                }
+                Toggle("Haptiques", isOn: $preferences.hapticsEnabled)
+                Toggle("Mode discret", isOn: $preferences.discreetMode)
+                Text("Le mode discret masque les courbes. Tes notes continuent.")
+                    .font(.caption)
+                    .foregroundStyle(Palette.inkMuted)
+                Toggle("Pause du suivi", isOn: Binding(
+                    get: { preferences.isPaused() },
+                    set: { on in
+                        preferences.pauseUntil = on ? Calendar.current.date(byAdding: .day, value: 14, to: .now) : nil
+                        preferences.save()
+                        Task { await Reminders.reschedule(medications: medications) }
+                    }
+                ))
+                if preferences.isPaused(), let until = preferences.pauseUntil {
+                    DatePicker("Jusqu'au", selection: Binding(
+                        get: { until },
+                        set: { preferences.pauseUntil = $0; preferences.save() }
+                    ), displayedComponents: .date)
+                }
+            } header: {
+                Text("Affichage").accessibilityAddTraits(.isHeader)
+            }
+            .headerProminence(.increased)
+
+            Section {
+                Text("PHQ-9, GAD-7, ASRM, life chart, plan de sécurité de Stanley et Brown.")
+                    .font(.subheadline)
+                    .foregroundStyle(Palette.inkMuted)
+                Text("Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.3")")
+                    .foregroundStyle(Palette.inkMuted)
+                Text("Polar ne remplace pas un avis médical.")
+                    .font(.subheadline)
+            } header: {
+                Text("À propos").accessibilityAddTraits(.isHeader)
+            }
+            .headerProminence(.increased)
         }
-        .onDelete { preferences.customPointNames.remove(atOffsets: $0) }
+        .navigationTitle("Réglages")
+        .navigationBarTitleDisplayMode(.inline)
+        .scrollContentBackground(.hidden)
+        .background(Palette.background)
+        .tint(Palette.ink)
+        .onDisappear { preferences.save() }
+        .onChange(of: preferences.weeklyEnabled) { _, _ in preferences.save() }
+        .onChange(of: preferences.weeklyWeekday) { _, _ in preferences.save() }
+        .onChange(of: preferences.faceIDEnabled) { _, _ in preferences.save() }
+        .onChange(of: preferences.discreetMode) { _, _ in preferences.save() }
+        .onChange(of: preferences.hapticsEnabled) { _, _ in preferences.save() }
+        .onChange(of: preferences.trackRhythm) { _, _ in preferences.save() }
+        .onChange(of: preferences.trackFactors) { _, _ in preferences.save() }
+        .onChange(of: preferences.trackPsychotic) { _, _ in preferences.save() }
+        .onChange(of: preferences.trackWeight) { _, _ in preferences.save() }
+        .onChange(of: preferences.aiEnabled) { _, _ in preferences.save() }
+        .onChange(of: preferences.cloudKitEnabled) { _, _ in preferences.save() }
+        .onChange(of: preferences.appearance) { _, _ in preferences.save() }
+        .fileImporter(isPresented: $showImporter, allowedContentTypes: [.json]) { result in
+            guard let url = try? result.get(), url.startAccessingSecurityScopedResource() else { return }
+            defer { url.stopAccessingSecurityScopedResource() }
+            pendingImport = try? Data(contentsOf: url)
+            confirmImport = pendingImport != nil
+        }
+        .confirmationDialog("Restaurer cette sauvegarde ?", isPresented: $confirmImport, titleVisibility: .visible) {
+            Button("Restaurer", role: .destructive) {
+                if let pendingImport {
+                    try? Backup.replace(data: pendingImport, in: context)
+                }
+                pendingImport = nil
+            }
+            Button("Annuler", role: .cancel) { pendingImport = nil }
+        }
+        .confirmationDialog("Effacer toutes les données ?", isPresented: $confirmErase, titleVisibility: .visible) {
+            Button("Effacer", role: .destructive) { erase() }
+            Button("Annuler", role: .cancel) {}
+        }
+        .sheet(item: $exportItem) { item in
+            ShareLink(item: item.url) { Text("Partager") }
+                .padding()
+        }
     }
 
-    private func reschedule() {
+    private var eveningBinding: Binding<Date> {
+        Binding(
+            get: { preferences.eveningDate },
+            set: { date in
+                let parts = Calendar.current.dateComponents([.hour, .minute], from: date)
+                preferences.eveningHour = parts.hour ?? preferences.eveningHour
+                preferences.eveningMinute = parts.minute ?? preferences.eveningMinute
+                preferences.eveningReminderEnabled = true
+                preferences.save()
+            }
+        )
+    }
+
+    private func addQuestion() {
+        let word = newQuestion.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !word.isEmpty else { return }
+        preferences.customPointNames.append(word)
+        preferences.save()
+        newQuestion = ""
+    }
+
+    private func reschedule(request: Bool) {
+        preferences.eveningReminderEnabled = true
         preferences.save()
         Task {
-            if preferences.eveningReminderEnabled || medications.contains(where: { $0.reminder != nil }) {
-                _ = await Reminders.requestAccess()
-            }
+            if request { _ = await Reminders.requestAccess() }
             await Reminders.reschedule(medications: medications)
         }
     }
-}
 
-struct MedicationForm: View {
-    var medicationID: PersistentIdentifier?
-    @Environment(\.modelContext) private var context
-    @Environment(\.dismiss) private var dismiss
-    @Query private var medications: [Medication]
-    @State private var name = ""
-    @State private var dose = ""
-    @State private var slot = "soir"
-    @State private var reminderOn = false
-    @State private var reminder = Date.now
-
-    private var medication: Medication? {
-        guard let medicationID else { return nil }
-        return medications.first { $0.persistentModelID == medicationID }
+    private func exportJSON() {
+        guard let data = try? Backup.make(in: context) else { return }
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("Polar.json")
+        try? data.write(to: url)
+        exportItem = ShareFile(url: url)
     }
 
-    var body: some View {
-        Form {
-            TextField("Nom", text: $name)
-            TextField("Dose", text: $dose)
-            Picker("Moment", selection: $slot) {
-                ForEach(MedicationSlot.all, id: \.self) { Text($0).tag($0) }
-            }
-            Toggle("Rappel", isOn: $reminderOn)
-            if reminderOn {
-                DatePicker("Heure", selection: $reminder, displayedComponents: .hourAndMinute)
-            }
-            if medicationID != nil {
-                Button(medication?.isActive == true ? "Archiver" : "Réactiver") {
-                    medication?.isActive = !(medication?.isActive ?? true)
-                    try? context.save()
-                    Task { await Reminders.reschedule(medications: medications) }
-                    dismiss()
-                }
-            }
-            Button("Enregistrer") { save() }
-        }
-        .navigationTitle(medicationID == nil ? "Traitement" : name)
-        .task(id: medicationID) {
-            guard let medication else { return }
-            name = medication.name
-            dose = medication.dose
-            slot = medication.slot
-            if let time = medication.reminder {
-                reminderOn = true
-                reminder = time
-            }
-        }
+    private func exportCSV() {
+        guard let text = try? CSVExport.make(in: context) else { return }
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("Polar.csv")
+        try? Data(text.utf8).write(to: url)
+        exportItem = ShareFile(url: url)
     }
 
-    private func save() {
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        let target: Medication
-        if let medication {
-            target = medication
-            target.name = trimmed
-            target.dose = dose
-            target.slot = slot
-        } else {
-            target = Medication(name: trimmed, dose: dose, slot: slot)
-            context.insert(target)
-        }
-        target.reminder = reminderOn ? reminder : nil
+    private func erase() {
+        wipe(Moment.self)
+        wipe(MedIntake.self)
+        wipe(DayLog.self)
+        wipe(Medication.self)
+        wipe(CarePlan.self)
+        wipe(SafetyPlan.self)
+        wipe(SurveyResponse.self)
+        wipe(LabResult.self)
+        wipe(TherapySession.self)
+        preferences.alertRules = []
+        preferences.sessionQuestions = []
+        preferences.save()
         try? context.save()
-        Task { await Reminders.reschedule(medications: medications) }
-        dismiss()
-    }
-}
-
-final class LocationReader: NSObject, CLLocationManagerDelegate {
-    let manager = CLLocationManager()
-    var onUpdate: ((CLLocation) -> Void)?
-
-    func request() {
-        manager.delegate = self
-        manager.requestWhenInUseAuthorization()
-        manager.requestLocation()
     }
 
-    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        if let place = locations.last { onUpdate?(place) }
+    private func wipe<T: PersistentModel>(_ type: T.Type) {
+        guard let items = try? context.fetch(FetchDescriptor<T>()) else { return }
+        for item in items { context.delete(item) }
     }
-
-    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {}
 }

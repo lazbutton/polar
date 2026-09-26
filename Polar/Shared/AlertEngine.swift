@@ -110,7 +110,14 @@ enum AlertEngine {
     private static func sleepIrregular(_ rule: AlertRule, logs: [DayLog], today: Date, calendar: Calendar) -> AlertHit? {
         let nights = nights(upTo: today, logs: logs, calendar: calendar)
         guard let variability = SleepMetrics.variability(nights, calendar: calendar) else { return nil }
-        guard variability.wake > rule.threshold else { return nil }
+        if rule.threshold <= 0 {
+            let recent = Array(nights.suffix(7))
+            let earlier = Array(nights.dropLast(7).suffix(28))
+            guard let baseline = SleepMetrics.variability(earlier, calendar: calendar) else { return nil }
+            guard variability.wake > baseline.wake else { return nil }
+        } else {
+            guard variability.wake > rule.threshold else { return nil }
+        }
         return hit(rule, "Lever irrégulier, ± \(Int(variability.wake.rounded())) min sur 7 nuits")
     }
 

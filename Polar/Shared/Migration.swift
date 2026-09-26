@@ -6,6 +6,7 @@ import SwiftData
 /// de Mon plan (0.1) vers les nouveaux champs, une seule fois, après une sauvegarde.
 enum Migration {
     private static let flagKey = "didMigrateToV2"
+    private static let flagKeyV3 = "didMigrateToV3"
 
     static var isDone: Bool {
         defaults?.bool(forKey: flagKey) ?? false
@@ -17,14 +18,47 @@ enum Migration {
 
     @MainActor
     static func runIfNeeded(in context: ModelContext) {
-        guard !isDone else { return }
-        // Sauvegarde JSON automatique avant tout changement.
-        backup(in: context)
-
-        if let plan = try? CarePlan.existing(in: context) {
-            migratePlan(plan, in: context)
+        let hadV2 = isDone
+        if !hadV2 {
+            // Sauvegarde JSON automatique avant tout changement.
+            backup(in: context)
+            if let plan = try? CarePlan.existing(in: context) {
+                migratePlan(plan, in: context)
+            }
+            defaults?.set(true, forKey: flagKey)
+            try? context.save()
         }
-        defaults?.set(true, forKey: flagKey)
+        runV3IfNeeded(in: context, existingInstall: hadV2)
+    }
+
+    /// Fusion des contacts et reprise des séances. Une installation déjà en 0.2
+    /// ne revoit pas le premier lancement.
+    @MainActor
+    static func runV3IfNeeded(in context: ModelContext, existingInstall: Bool) {
+        guard defaults?.bool(forKey: flagKeyV3) != true else { return }
+        if existingInstall, defaults?.object(forKey: "didFinishOnboarding") == nil {
+            defaults?.set(true, forKey: "didFinishOnboarding")
+            Preferences.shared.didFinishOnboarding = true
+        }
+        let plan = (try? CarePlan.findOrCreate(in: context)) ?? CarePlan()
+        let safety = (try? SafetyPlan.findOrCreate(in: context)) ?? SafetyPlan()
+        let merged = ContactMerge.merge(
+            planContacts: plan.contacts,
+            helpers: safety.helpers,
+            professionals: safety.professionals,
+            helperIDs: safety.helperIDs,
+            professionalIDs: safety.professionalIDs
+        )
+        plan.contacts = merged.contacts
+        safety.helperIDs = merged.helperIDs
+        safety.professionalIDs = merged.professionalIDs
+
+        let logs = (try? context.fetch(FetchDescriptor<DayLog>())) ?? []
+        let existing = (try? context.fetch(FetchDescriptor<TherapySession>())) ?? []
+        for session in SessionImport.sessions(from: logs, existing: existing) {
+            context.insert(session)
+        }
+        defaults?.set(true, forKey: flagKeyV3)
         try? context.save()
     }
 

@@ -40,6 +40,14 @@ enum French {
         date.formatted(.dateTime.month(.wide).year().locale(locale))
     }
 
+    static func shortDay(_ date: Date) -> String {
+        date.formatted(.dateTime.weekday(.wide).day().locale(locale))
+    }
+
+    static func level(_ value: Int) -> String {
+        ["Aucun", "Léger", "Modéré", "Sévère"][min(max(value, 0), 3)]
+    }
+
     static func sleep(_ hours: Double) -> String {
         let minutes = Int((hours * 60).rounded())
         return "\(minutes / 60) h \(String(format: "%02d", minutes % 60))"

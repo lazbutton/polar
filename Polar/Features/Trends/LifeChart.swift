@@ -4,6 +4,13 @@ import SwiftUI
 struct LifeChart: View {
     var logs: [DayLog]
     var height: CGFloat = 180
+    @Binding var selection: Date?
+
+    init(logs: [DayLog], height: CGFloat = 180, selection: Binding<Date?> = .constant(nil)) {
+        self.logs = logs
+        self.height = height
+        self._selection = selection
+    }
 
     var body: some View {
         Chart(logs.sorted { $0.day < $1.day }) { log in
@@ -36,6 +43,7 @@ struct LifeChart: View {
                     .foregroundStyle(Palette.inkMuted)
             }
         }
+        .chartXSelection(value: $selection)
         .frame(height: height)
         .accessibilityLabel("Humeur haute au-dessus, humeur basse en dessous")
     }
@@ -43,27 +51,65 @@ struct LifeChart: View {
 
 struct SleepChart: View {
     var logs: [DayLog]
+    @Binding var selection: Date?
+
+    init(logs: [DayLog], selection: Binding<Date?> = .constant(nil)) {
+        self.logs = logs
+        self._selection = selection
+    }
 
     var body: some View {
         Chart(logs.sorted { $0.day < $1.day }) { log in
-            if let hours = log.resolvedSleepHours {
-                LineMark(
-                    x: .value("Jour", log.day, unit: .day),
-                    y: .value("Sommeil", hours)
-                )
-                .foregroundStyle(Palette.ink)
-            }
-            if log.intakes?.contains(where: { $0.taken == false }) == true {
-                PointMark(
-                    x: .value("Jour", log.day, unit: .day),
-                    y: .value("Repère", log.resolvedSleepHours ?? 0)
-                )
-                .foregroundStyle(Palette.inkMuted)
-                .symbolSize(40)
+            sleepMarks(log)
+        }
+        .chartYScale(domain: 0.0...1440.0)
+        .chartYAxis {
+            AxisMarks(values: [0.0, 360.0, 720.0, 1080.0]) { value in
+                AxisGridLine().foregroundStyle(Palette.hairline)
+                AxisValueLabel {
+                    if let raw = value.as(Double.self) {
+                        Text("\(Int(raw) / 60) h").foregroundStyle(Palette.inkMuted)
+                    }
+                }
             }
         }
-        .frame(height: 140)
-        .accessibilityLabel("Sommeil")
+        .chartXSelection(value: $selection)
+        .frame(height: 160)
+        .accessibilityLabel("Sommeil, du coucher au lever")
+    }
+
+    @ChartContentBuilder
+    private func sleepMarks(_ log: DayLog) -> some ChartContent {
+        if let night = log.resolvedSleepNight() {
+            let start = minutes(night.bedtime)
+            let end = minutes(night.wake)
+            if start <= end {
+                bar(log.day, start, end)
+            } else {
+                bar(log.day, start, 1440.0)
+                bar(log.day, 0.0, end)
+            }
+        } else if let hours = log.resolvedSleepHours {
+            BarMark(
+                x: .value("Jour", log.day, unit: .day),
+                y: .value("Durée", hours * 60)
+            )
+            .foregroundStyle(Palette.inkMuted)
+        }
+    }
+
+    private func bar(_ day: Date, _ start: Double, _ end: Double) -> some ChartContent {
+        BarMark(
+            x: .value("Jour", day, unit: .day),
+            yStart: .value("Début", start),
+            yEnd: .value("Fin", end)
+        )
+        .foregroundStyle(Palette.ink.opacity(0.85))
+    }
+
+    private func minutes(_ date: Date) -> Double {
+        let parts = Calendar.current.dateComponents([.hour, .minute], from: date)
+        return Double((parts.hour ?? 0) * 60 + (parts.minute ?? 0))
     }
 }
 
@@ -75,11 +121,7 @@ struct SurveyChart: View {
         if surveys.isEmpty {
             EmptyView()
         } else {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Questionnaires")
-                    .font(.headline)
-                    .foregroundStyle(Palette.ink)
-                Chart(surveys.sorted { $0.date < $1.date }) { survey in
+            Chart(surveys.sorted { $0.date < $1.date }) { survey in
                     LineMark(
                         x: .value("Jour", survey.date, unit: .day),
                         y: .value("Score", survey.score)
@@ -98,33 +140,6 @@ struct SurveyChart: View {
                 ])
                 .frame(height: 140)
                 .accessibilityLabel("Scores des questionnaires")
-            }
-        }
-    }
-}
-
-enum Measure: String, CaseIterable, Identifiable {
-    case sleep, elevated, depressed, irritability, anxiety, weight
-    var id: String { rawValue }
-    var label: String {
-        switch self {
-        case .sleep: "Sommeil"
-        case .elevated: "Humeur haute"
-        case .depressed: "Humeur basse"
-        case .irritability: "Irritabilité"
-        case .anxiety: "Anxiété"
-        case .weight: "Poids"
-        }
-    }
-
-    func value(in log: DayLog) -> Double? {
-        switch self {
-        case .sleep: log.resolvedSleepHours
-        case .elevated: Double(log.elevated)
-        case .depressed: Double(log.depressed)
-        case .irritability: Double(log.irritability)
-        case .anxiety: Double(log.anxiety)
-        case .weight: log.weightKg
         }
     }
 }
