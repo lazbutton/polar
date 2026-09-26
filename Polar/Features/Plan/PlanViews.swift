@@ -1,147 +1,167 @@
 import SwiftData
 import SwiftUI
 
+/// Mon plan : prévention des rechutes, par pôle et par palier.
 struct CarePlanView: View {
     @Environment(\.modelContext) private var context
     @Environment(Preferences.self) private var preferences
     @Environment(CaptureRouter.self) private var router
     @State private var plan: CarePlan?
-    @State private var signDraft = ""
-    @State private var helpDraft = ""
-    @State private var newRuleKind = AlertRule.Kind.shortSleep
-    @State private var newThreshold = ""
-    @State private var newSpan = ""
 
     var body: some View {
-        @Bindable var preferences = preferences
         Form {
             if let plan {
-                stringList("Signes précurseurs", items: plan.warningSigns, draft: $signDraft) { plan.warningSigns = $0 }
-                stringList("Ce qui t'aide", items: plan.whatHelps, draft: $helpDraft) { plan.whatHelps = $0 }
-                Section("Personne de confiance") {
-                    TextField("Nom", text: Binding(get: { plan.trustedName ?? "" }, set: { plan.trustedName = $0.isEmpty ? nil : $0 }))
-                    TextField("Téléphone", text: Binding(get: { plan.trustedPhone ?? "" }, set: { plan.trustedPhone = $0.isEmpty ? nil : $0 }))
-                        .keyboardType(.phonePad)
+                Section {
+                    if let date = plan.reviewedAt {
+                        Text("Relu le \(date.formatted(.dateTime.day().month(.wide).locale(French.locale)))")
+                            .foregroundStyle(Palette.inkMuted)
+                    }
+                    Button("Marquer relu aujourd'hui") {
+                        plan.reviewedAt = .now
+                        try? context.save()
+                    }
                 }
-                Section("Psy") {
-                    TextField("Nom", text: Binding(get: { plan.therapistName ?? "" }, set: { plan.therapistName = $0.isEmpty ? nil : $0 }))
-                    TextField("Téléphone", text: Binding(get: { plan.therapistPhone ?? "" }, set: { plan.therapistPhone = $0.isEmpty ? nil : $0 }))
-                        .keyboardType(.phonePad)
+
+                ForEach(Pole.allCases) { pole in
+                    ForEach(PlanStage.allCases) { stage in
+                        poleStageSection(plan, pole: pole, stage: stage)
+                    }
                 }
+
+                if !plan.unsortedSigns.isEmpty {
+                    unsortedSection(plan)
+                }
+
+                contactsSection(plan)
             }
+
+            signalsSection
+
             Section {
-                Text("Aucun seuil n'est fixé tant que tu ne l'écris pas avec ta psy.")
-                    .font(.subheadline)
-                    .foregroundStyle(Palette.inkMuted)
-                Picker("Signal", selection: $newRuleKind) {
-                    ForEach(AlertRule.Kind.allCases) { Text($0.label).tag($0) }
-                }
-                TextField(newRuleKind == .shortSleep ? "Heures" : "Niveau, 1 à 3", text: $newThreshold)
-                    .keyboardType(.decimalPad)
-                TextField("Nombre de jours", text: $newSpan)
-                    .keyboardType(.numberPad)
-                Button("Ajouter ce signal") { addRule() }
-                ForEach(preferences.alertRules) { rule in
-                    Text("\(rule.kind.label) \(rule.threshold) · \(rule.span)")
-                }
-                .onDelete { offsets in
-                    preferences.alertRules.remove(atOffsets: offsets)
-                    preferences.save()
-                }
-            } header: {
-                Text("Signaux d'alerte")
-            }
-            Section {
-                Button("Ça ne va pas") { router.openSupport() }
+                NavigationLink("Plan de sécurité", value: AppRoute.safetyPlan)
             }
         }
         .navigationTitle("Mon plan")
-        .task {
-            plan = try? CarePlan.findOrCreate(in: context)
+        .tint(Palette.ink)
+        .task { plan = try? CarePlan.findOrCreate(in: context) }
+    }
+
+    private func poleStageSection(_ plan: CarePlan, pole: Pole, stage: PlanStage) -> some View {
+        Section("\(pole.label) · \(stage.label)") {
+            let signs = plan.signs(pole: pole, stage: stage)
+            ForEach(signs) { sign in
+                Text(sign.text)
+            }
+            .onDelete { offsets in
+                let ids = offsets.map { signs[$0].id }
+                plan.signs.removeAll { ids.contains($0.id) }
+                try? context.save()
+            }
+            addField("Ajouter un signe") { text in
+                plan.signs.append(WarningSign(text: text, pole: pole, stage: stage.rawValue))
+                try? context.save()
+            }
+
+            let actions = plan.actions(pole: pole, stage: stage)
+            ForEach(actions) { action in
+                Text(action.text)
+                    .foregroundStyle(Palette.inkMuted)
+            }
+            .onDelete { offsets in
+                let ids = offsets.map { actions[$0].id }
+                plan.actions.removeAll { ids.contains($0.id) }
+                try? context.save()
+            }
+            addField("Ajouter une action") { text in
+                plan.actions.append(PlanAction(text: text, pole: pole, stage: stage.rawValue))
+                try? context.save()
+            }
         }
     }
 
-    private func stringList(_ title: String, items: [String], draft: Binding<String>, set: @escaping ([String]) -> Void) -> some View {
-        Section(title) {
-            ForEach(items, id: \.self) { item in
-                Text(item)
-            }
-            .onDelete { offsets in
-                var copy = items
-                copy.remove(atOffsets: offsets)
-                set(copy)
-                try? context.save()
-            }
-            HStack {
-                TextField("Ajouter", text: draft)
-                Button("OK") {
-                    let word = draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !word.isEmpty else { return }
-                    set(items + [word])
-                    draft.wrappedValue = ""
-                    try? context.save()
+    private func unsortedSection(_ plan: CarePlan) -> some View {
+        Section("À classer") {
+            Text("Ces signes viennent de la version précédente. Classe-les par pôle.")
+                .font(.caption)
+                .foregroundStyle(Palette.inkMuted)
+            ForEach(plan.unsortedSigns) { sign in
+                HStack {
+                    Text(sign.text)
+                    Spacer()
+                    Menu("Classer") {
+                        ForEach(Pole.allCases) { pole in
+                            Button(pole.label) { classify(sign, to: pole, in: plan) }
+                        }
+                    }
+                    .foregroundStyle(Palette.ink)
                 }
             }
         }
     }
 
-    private func addRule() {
-        guard let threshold = Double(newThreshold.replacingOccurrences(of: ",", with: ".")),
-              let span = Int(newSpan), span > 0 else { return }
-        preferences.alertRules.append(AlertRule(kind: newRuleKind, threshold: threshold, span: span))
-        preferences.save()
-        newThreshold = ""
-        newSpan = ""
+    private func contactsSection(_ plan: CarePlan) -> some View {
+        Section("Contacts") {
+            ForEach(plan.contacts) { contact in
+                VStack(alignment: .leading) {
+                    Text(contact.name)
+                    Text(contact.phone).font(.caption).foregroundStyle(Palette.inkMuted)
+                }
+            }
+            .onDelete { offsets in
+                let ids = offsets.map { plan.contacts[$0].id }
+                plan.contacts.removeAll { ids.contains($0.id) }
+                try? context.save()
+            }
+            NavigationLink("Plan de sécurité et contacts d'urgence", value: AppRoute.safetyPlan)
+        }
+    }
+
+    private var signalsSection: some View {
+        Section {
+            NavigationLink("Régler les signaux", value: AppRoute.settings)
+            Text("Aucun seuil n'est fixé tant que tu ne l'écris pas avec ta psy.")
+                .font(.caption)
+                .foregroundStyle(Palette.inkMuted)
+            ForEach(preferences.alertRules) { rule in
+                Text("\(rule.kind.label) \(formatted(rule.threshold)) · \(rule.span) j")
+                    .foregroundStyle(rule.isOn ? Palette.ink : Palette.inkMuted)
+            }
+        } header: {
+            Text("Signaux d'alerte")
+        }
+    }
+
+    private func classify(_ sign: WarningSign, to pole: Pole, in plan: CarePlan) {
+        guard let index = plan.signs.firstIndex(where: { $0.id == sign.id }) else { return }
+        plan.signs[index].pole = pole
+        try? context.save()
+    }
+
+    private func addField(_ placeholder: String, action: @escaping (String) -> Void) -> some View {
+        AddField(placeholder: placeholder, action: action)
+    }
+
+    private func formatted(_ value: Double) -> String {
+        value == value.rounded() ? String(Int(value)) : String(value)
     }
 }
 
-struct SupportView: View {
-    @Environment(\.modelContext) private var context
-    @Query private var plans: [CarePlan]
-    @State private var message = "Je ne vais pas très bien. Tu peux me rappeler ?"
-
-    private var plan: CarePlan? { plans.first }
+/// Champ d'ajout avec un bouton, réutilisé pour signes et actions.
+private struct AddField: View {
+    let placeholder: String
+    let action: (String) -> Void
+    @State private var draft = ""
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                if let helps = plan?.whatHelps, !helps.isEmpty {
-                    Text("Ce qui t'aide")
-                        .font(.headline)
-                    ForEach(helps, id: \.self) { Text($0) }
-                }
-                if let phone = plan?.trustedPhone {
-                    Link("Appeler \(plan?.trustedName ?? "ta personne de confiance")", destination: URL(string: "tel:\(digits(phone))")!)
-                    TextField("Message", text: $message, axis: .vertical)
-                        .lineLimit(2...4)
-                        .padding(12)
-                        .background(Palette.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    if let url = smsURL(phone: phone) {
-                        Link("Écrire, c'est toi qui envoies", destination: url)
-                    }
-                }
-                if let phone = plan?.therapistPhone {
-                    Link("Appeler \(plan?.therapistName ?? "ta psy")", destination: URL(string: "tel:\(digits(phone))")!)
-                }
-                Link("3114, prévention du suicide, 24 h/24", destination: URL(string: "tel:3114")!)
-                Link("15, urgence médicale", destination: URL(string: "tel:15")!)
+        HStack {
+            TextField(placeholder, text: $draft)
+            Button("OK") {
+                let word = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !word.isEmpty else { return }
+                action(word)
+                draft = ""
             }
-            .font(.body)
             .foregroundStyle(Palette.ink)
-            .padding(20)
         }
-        .background(Palette.background)
-        .navigationTitle("Ça ne va pas")
-        .navigationBarTitleDisplayMode(.large)
-    }
-
-    private func digits(_ phone: String) -> String {
-        phone.filter(\.isNumber)
-    }
-
-    private func smsURL(phone: String) -> URL? {
-        var components = URLComponents(string: "sms:\(digits(phone))")
-        components?.queryItems = [URLQueryItem(name: "body", value: message)]
-        return components?.url
     }
 }

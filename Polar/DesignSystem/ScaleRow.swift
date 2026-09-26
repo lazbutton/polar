@@ -3,6 +3,7 @@ import SwiftUI
 struct ScaleRow: View {
     let title: String
     let tint: Color
+    var yesterday: Int? = nil
     @Binding var value: Int
     private let levels = ["aucun", "léger", "modéré", "sévère"]
 
@@ -17,12 +18,19 @@ struct ScaleRow: View {
                         Button {
                             value = level
                         } label: {
-                            Circle()
-                                .fill(level == value ? tint : .clear)
-                                .overlay(Circle().strokeBorder(level == value ? tint : Palette.hairline, lineWidth: 1.5))
-                                .frame(width: 24, height: 24)
-                                .frame(maxWidth: .infinity, minHeight: 44)
-                                .contentShape(.rect)
+                            ZStack {
+                                if level == yesterday, level != value {
+                                    Circle()
+                                        .strokeBorder(tint.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [2, 2]))
+                                        .frame(width: 32, height: 32)
+                                }
+                                Circle()
+                                    .fill(level == value ? tint : .clear)
+                                    .overlay(Circle().strokeBorder(level == value ? tint : Palette.hairline, lineWidth: 1.5))
+                                    .frame(width: 24, height: 24)
+                            }
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                            .contentShape(.rect)
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("\(title), \(levels[level])")

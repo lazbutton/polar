@@ -87,12 +87,16 @@ struct RootView: View {
             CaptureSheet(momentID: id, voice: voice)
         case .day(let date):
             DayLogSheet(date: date)
-        case .support:
-            SupportView()
+        case .safetyPlan:
+            SafetyPlanPage()
         case .settings:
             SettingsView()
         case .plan:
             CarePlanView()
+        case .weeklyCheck:
+            WeeklyCheckPage()
+        case .session:
+            SessionPage()
         case .medication(let id):
             MedicationForm(medicationID: id)
         }

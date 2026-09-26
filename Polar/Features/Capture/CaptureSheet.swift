@@ -188,6 +188,23 @@ struct CaptureSheet: View {
                     )
                     .accessibilityLabel("Dicter")
             }
+            if Distress.containsSignal(moment.thought ?? "") {
+                Button { router.openSafetyPlan() } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "heart.text.square")
+                        Text("Ton plan de sécurité est là")
+                        Spacer()
+                        Image(systemName: "chevron.right").font(.caption.weight(.semibold))
+                    }
+                    .font(.subheadline)
+                    .foregroundStyle(Palette.ink)
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Palette.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .transition(.opacity)
+            }
         }
     }
 
@@ -215,6 +232,12 @@ struct CaptureSheet: View {
                     }
                 }
             }
+            Toggle("À en parler avec ma psy", isOn: Binding(
+                get: { moment.forSession },
+                set: { moment.forSession = $0 }
+            ))
+            .tint(Palette.ink)
+            .font(.subheadline)
         }
     }
 

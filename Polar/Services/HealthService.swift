@@ -12,7 +12,12 @@ final class HealthService {
         guard isAvailable else { return }
         try await store.requestAuthorization(
             toShare: [HKObjectType.stateOfMindType()],
-            read: [HKObjectType.stateOfMindType(), HKCategoryType(.sleepAnalysis)]
+            read: [
+                HKObjectType.stateOfMindType(),
+                HKCategoryType(.sleepAnalysis),
+                HKQuantityType(.stepCount),
+                HKQuantityType(.timeInDaylight),
+            ]
         )
     }
 
@@ -71,6 +76,56 @@ final class HealthService {
             return bundle.contains("watch") || product.contains("watch")
         }
         return mergedHours(of: watch.isEmpty ? asleep : watch)
+    }
+
+    /// Horaires du sommeil : début du premier échantillon endormi, fin du dernier.
+    func sleepTiming(for logicalDay: Date, calendar: Calendar = .current) async -> (bedtime: Date, wake: Date)? {
+        guard isAvailable else { return nil }
+        guard let end = calendar.date(bySettingHour: 14, minute: 0, second: 0, of: logicalDay),
+              let start = calendar.date(byAdding: .hour, value: -20, to: end) else { return nil }
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: .strictStartDate)
+        let samples: [HKCategorySample] = await withCheckedContinuation { continuation in
+            let query = HKSampleQuery(
+                sampleType: HKCategoryType(.sleepAnalysis),
+                predicate: predicate,
+                limit: HKObjectQueryNoLimit,
+                sortDescriptors: nil
+            ) { _, result, _ in
+                continuation.resume(returning: (result as? [HKCategorySample]) ?? [])
+            }
+            store.execute(query)
+        }
+        let asleep = samples.filter { sample in
+            guard let value = HKCategoryValueSleepAnalysis(rawValue: sample.value) else { return false }
+            return HKCategoryValueSleepAnalysis.allAsleepValues.contains(value)
+        }
+        guard let first = asleep.map(\.startDate).min(), let last = asleep.map(\.endDate).max() else { return nil }
+        return (first, last)
+    }
+
+    /// Minutes de lumière du jour (Apple Watch) et pas d'une journée.
+    func dailyTotals(for day: Date, calendar: Calendar = .current) async -> (daylight: Double?, steps: Int?) {
+        guard isAvailable else { return (nil, nil) }
+        let start = calendar.startOfDay(for: day)
+        guard let end = calendar.date(byAdding: .day, value: 1, to: start) else { return (nil, nil) }
+        let range = HKQuery.predicateForSamples(withStart: start, end: end)
+
+        func sum(_ id: HKQuantityTypeIdentifier, _ unit: HKUnit) async -> Double? {
+            await withCheckedContinuation { continuation in
+                let descriptor = HKStatisticsQuery(
+                    quantityType: HKQuantityType(id),
+                    quantitySamplePredicate: range,
+                    options: .cumulativeSum
+                ) { _, statistics, _ in
+                    continuation.resume(returning: statistics?.sumQuantity()?.doubleValue(for: unit))
+                }
+                store.execute(descriptor)
+            }
+        }
+
+        let daylight = await sum(.timeInDaylight, .minute())
+        let steps = await sum(.stepCount, .count()).map { Int($0) }
+        return (daylight, steps)
     }
 
     private func mergedHours(of samples: [HKCategorySample]) -> Double {

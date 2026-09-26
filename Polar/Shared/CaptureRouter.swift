@@ -5,9 +5,11 @@ import SwiftData
 enum AppRoute: Hashable {
     case moment(PersistentIdentifier, voice: Bool)
     case day(Date)
-    case support
+    case safetyPlan
     case settings
     case plan
+    case weeklyCheck
+    case session
     case medication(PersistentIdentifier?)
 }
 
@@ -35,7 +37,19 @@ final class CaptureRouter {
     }
 
     func openSupport() {
-        push(.support)
+        push(.safetyPlan)
+    }
+
+    func openSafetyPlan() {
+        push(.safetyPlan)
+    }
+
+    func openWeeklyCheck() {
+        push(.weeklyCheck)
+    }
+
+    func openSession() {
+        push(.session)
     }
 
     func openSettings() {
