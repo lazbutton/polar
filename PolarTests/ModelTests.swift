@@ -52,7 +52,7 @@ struct SleepNightTests {
         let wake = Paris.date(2026, 9, 26, 7, 0)
         let night = SleepNight.anchored(bedtime: bed, wake: wake, on: logicalDay, calendar: calendar)
 
-        #expect(night?.duration == 8 * 3600)
+        #expect(night?.duration == 8 * 3600.0)
         #expect(calendar.component(.day, from: night!.bedtime) == 25)
         #expect(calendar.component(.hour, from: night!.bedtime) == 23)
     }
