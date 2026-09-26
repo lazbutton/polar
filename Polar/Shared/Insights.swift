@@ -13,13 +13,13 @@ enum Insights {
         var lines: [String] = []
 
         if let threshold = rules.first(where: { $0.kind == .shortSleep })?.threshold {
-            let short = logs.filter { ($0.sleepHours ?? .greatestFiniteMagnitude) < threshold }.count
+            let short = logs.filter { ($0.resolvedSleepHours ?? .greatestFiniteMagnitude) < threshold }.count
             if short > 0 {
                 lines.append("\(short) nuit\(short > 1 ? "s" : "") courte\(short > 1 ? "s" : "") cette période")
             }
         }
 
-        let noted = logs.filter { $0.sleepHours != nil }.count
+        let noted = logs.filter { $0.resolvedSleepHours != nil }.count
         if noted > 0 {
             lines.append("Sommeil noté \(noted) nuit\(noted > 1 ? "s" : "")")
         }

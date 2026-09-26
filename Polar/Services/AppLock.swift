@@ -1,5 +1,6 @@
 import LocalAuthentication
 import Observation
+import UIKit
 
 @MainActor
 @Observable
@@ -35,6 +36,7 @@ final class AppLock {
 
     func unlock() {
         guard isLocked, evaluation == nil else { return }
+        guard UIApplication.shared.applicationState == .active else { return }
         evaluation = Task { await evaluate() }
     }
 
@@ -52,6 +54,7 @@ final class AppLock {
         }
 
         let policy: LAPolicy = faceID ? .deviceOwnerAuthenticationWithBiometrics : .deviceOwnerAuthentication
+        guard UIApplication.shared.applicationState == .active else { return }
         do {
             let success = try await context.evaluatePolicy(policy, localizedReason: "Ouvrir Polar")
             guard !Task.isCancelled else { return }
@@ -69,6 +72,8 @@ final class AppLock {
                 await evaluatePasscode()
             case .passcodeNotSet, .biometryNotAvailable, .biometryNotEnrolled:
                 isLocked = false
+            case .appCancel, .systemCancel, .userCancel:
+                isLocked = true
             default:
                 isLocked = true
             }

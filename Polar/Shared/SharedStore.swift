@@ -22,7 +22,14 @@ enum SharedStore {
         do {
             return try makeContainer()
         } catch {
-            fatalError("Stockage indisponible : \(error)")
+            NSLog("Polar: le stockage actuel ne s'ouvre pas (\(error)). L'ancien fichier est mis de côté.")
+            do {
+                quarantineCurrentStore()
+                UserDefaults(suiteName: appGroupIdentifier)?.set(false, forKey: "cloudKitEnabled")
+                return try makeContainer(cloudKit: false)
+            } catch {
+                fatalError("Stockage indisponible : \(error)")
+            }
         }
     }()
 
@@ -62,5 +69,24 @@ enum SharedStore {
             cloudKitDatabase: .none
         )
         return try ModelContainer(for: schema, configurations: configuration)
+    }
+
+    /// Garde l'ancien fichier sqlite à côté, pour ne pas le perdre si le schéma 0.2 ne peut pas l'ouvrir.
+    private static func quarantineCurrentStore() {
+        let configuration = ModelConfiguration(
+            schema: schema,
+            groupContainer: .identifier(appGroupIdentifier),
+            cloudKitDatabase: .none
+        )
+        let url = configuration.url
+        let folder = url.deletingLastPathComponent()
+        let stamp = ISO8601DateFormatter().string(from: .now).replacingOccurrences(of: ":", with: "-")
+        let base = url.lastPathComponent
+        for suffix in ["", "-shm", "-wal"] {
+            let source = folder.appendingPathComponent(base + suffix)
+            guard FileManager.default.fileExists(atPath: source.path) else { continue }
+            let destination = folder.appendingPathComponent("avant-0.2-\(stamp)-\(base)\(suffix)")
+            try? FileManager.default.moveItem(at: source, to: destination)
+        }
     }
 }

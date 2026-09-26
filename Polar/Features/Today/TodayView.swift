@@ -9,7 +9,6 @@ struct TodayView: View {
     @Query(sort: \DayLog.day, order: .reverse) private var logs: [DayLog]
     @Query private var plans: [CarePlan]
     @Query(sort: \SurveyResponse.date, order: .reverse) private var surveys: [SurveyResponse]
-    @State private var notedKey = ""
 
     private var today: Date { Date.now.logicalDay(startHour: preferences.startHour) }
     private var todaysMoments: [Moment] {
@@ -57,12 +56,21 @@ struct TodayView: View {
     private var header: some View {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 0) {
-                Text(French.dayTitle(.now))
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(Palette.ink)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
+                Text(French.weekday(.now))
+                    .font(.subheadline)
+                    .foregroundStyle(Palette.inkMuted)
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(French.dayNumber(.now))
+                        .font(.largeTitle.weight(.semibold))
+                        .fontDesign(.rounded)
+                        .monospacedDigit()
+                    Text(French.monthName(.now))
+                        .font(.title3.weight(.medium))
+                }
+                .foregroundStyle(Palette.ink)
             }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(French.dayTitle(.now))
             Spacer(minLength: 8)
             Button { router.openSettings() } label: {
                 Image(systemName: "gearshape")
@@ -95,14 +103,17 @@ struct TodayView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.top, 8)
                 .journalRow(top: 12, bottom: 4)
-            composer
-                .journalRow(top: 0, bottom: 8)
             if todaysMoments.isEmpty {
-                Text("Rien de noté aujourd'hui.")
-                    .font(.subheadline)
-                    .foregroundStyle(Palette.inkMuted)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .journalRow(top: 0, bottom: 8)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Rien de noté aujourd'hui.")
+                        .font(.subheadline)
+                        .foregroundStyle(Palette.inkMuted)
+                    Text("Touche le crayon, à droite, pour en noter un.")
+                        .font(.subheadline)
+                        .foregroundStyle(Palette.inkFaint)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .journalRow(top: 0, bottom: 8)
             } else {
                 ForEach(todaysMoments) { moment in
                     momentRow(moment)
@@ -113,7 +124,7 @@ struct TodayView: View {
         .scrollContentBackground(.hidden)
         .environment(\.defaultMinListRowHeight, 8)
         .contentMargins(.top, 8, for: .scrollContent)
-        .contentMargins(.bottom, 72, for: .scrollContent)
+        .contentMargins(.bottom, 88, for: .scrollContent)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background {
             UnevenRoundedRectangle(
@@ -136,7 +147,7 @@ struct TodayView: View {
                         .font(.headline)
                         .foregroundStyle(Palette.ink)
                     Spacer(minLength: 8)
-                    if let hours = log?.sleepHours {
+                    if let hours = log?.resolvedSleepHours {
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Text("Sommeil")
                                 .font(.subheadline)
@@ -151,7 +162,7 @@ struct TodayView: View {
                         .foregroundStyle(Palette.inkFaint)
                 }
                 if let log {
-                    if log.sleepHours == nil {
+                    if log.resolvedSleepHours == nil {
                         Text("Sommeil non noté")
                             .font(.caption)
                             .foregroundStyle(Palette.inkFaint)
@@ -201,7 +212,7 @@ struct TodayView: View {
     private var glanceAccess: String {
         guard let log else { return "Pas encore fait" }
         var parts: [String] = []
-        if let hours = log.sleepHours {
+        if let hours = log.resolvedSleepHours {
             parts.append("Sommeil \(French.sleep(hours))")
         }
         if preferences.trackDepressed { parts.append("Humeur basse \(DayLevel.word(log.depressed))") }
@@ -234,51 +245,6 @@ struct TodayView: View {
         .buttonStyle(.plain)
     }
 
-    private var composer: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Un mot suffit.")
-                .font(.subheadline)
-                .foregroundStyle(Palette.inkMuted)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(quickEmotions, id: \.id) { emotion in
-                        IntensityChip(title: emotion.label) { intensity in
-                            note(emotion.id, intensity: intensity)
-                        }
-                    }
-                }
-                .padding(.top, 20)
-            }
-            HStack(spacing: 20) {
-                Button("Écrire") { router.openCapture() }
-                Button("Dicter") { router.openCapture(voice: true) }
-            }
-            .font(.subheadline.weight(.medium))
-            .foregroundStyle(Palette.ink)
-            .frame(minHeight: 44, alignment: .leading)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .sensoryFeedback(.selection, trigger: notedKey)
-    }
-
-    private var quickEmotions: [Emotion] {
-        Journal.recentEmotionKeys(from: moments).compactMap(EmotionCatalog.emotion(for:))
-    }
-
-    private func note(_ key: String, intensity: Int? = nil) {
-        let moment = Moment(emotionKey: key, intensity: intensity, source: "app")
-        notedKey = key
-        context.insert(moment)
-        try? context.save()
-        SpotlightIndex.index(moment)
-        router.pulse()
-        ToastCenter.shared.show("À compléter quand tu veux.") {
-            context.delete(moment)
-            SpotlightIndex.remove(moment)
-            try? context.save()
-        }
-    }
-
     private func momentRow(_ moment: Moment) -> some View {
         Button {
             router.openMoment(moment.persistentModelID)
@@ -309,8 +275,10 @@ struct TodayView: View {
                         .lineLimit(1)
                 }
             }
-            .padding(.vertical, 6)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Palette.background, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
         .buttonStyle(.plain)
         .accessibilityHint(moment.isComplete ? "Ouvre ce moment" : "À compléter")
@@ -334,7 +302,7 @@ struct TodayView: View {
             }
             Button("Supprimer", systemImage: "trash", role: .destructive) { delete(moment) }
         }
-        .journalRow(top: 0, bottom: 0)
+        .journalRow(top: 4, bottom: 4)
     }
 
     private func alertCard(_ hit: AlertHit) -> some View {

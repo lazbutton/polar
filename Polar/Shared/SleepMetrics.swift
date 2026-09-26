@@ -7,6 +7,26 @@ struct SleepNight: Equatable {
 
     var duration: TimeInterval { wake.timeIntervalSince(bedtime) }
 
+    /// Ramène une nuit au jour logique à partir des heures affichées.
+    /// Le lever est le matin de ce jour. Si l'heure de coucher est plus tard
+    /// que l'heure de lever (23 h → 7 h), le coucher est la veille au soir.
+    /// Sinon les deux restent le même matin (4 h → 11 h 30 = 7 h 30).
+    static func anchored(bedtime: Date, wake: Date, on logicalDay: Date, calendar: Calendar = .current) -> SleepNight? {
+        let bedClock = calendar.dateComponents([.hour, .minute], from: bedtime)
+        let wakeClock = calendar.dateComponents([.hour, .minute], from: wake)
+        guard
+            let bedHour = bedClock.hour, let bedMinute = bedClock.minute,
+            let wakeHour = wakeClock.hour, let wakeMinute = wakeClock.minute,
+            let wakeDate = calendar.date(bySettingHour: wakeHour, minute: wakeMinute, second: 0, of: logicalDay),
+            var bedDate = calendar.date(bySettingHour: bedHour, minute: bedMinute, second: 0, of: logicalDay)
+        else { return nil }
+        if bedDate > wakeDate {
+            guard let previousEvening = calendar.date(byAdding: .day, value: -1, to: bedDate) else { return nil }
+            bedDate = previousEvening
+        }
+        return SleepNight(bedtime: bedDate, wake: wakeDate)
+    }
+
     /// Milieu du sommeil en minutes après 18 h, pour éviter le passage de minuit.
     func midpointMinutes(calendar: Calendar = .current) -> Double {
         let mid = bedtime.addingTimeInterval(duration / 2)

@@ -28,17 +28,6 @@ struct RootView: View {
         .overlay(alignment: .bottom) {
             ToastOverlay(center: ToastCenter.shared)
         }
-        .overlay(alignment: .bottomTrailing) {
-            if !lock.isLocked, router.path.isEmpty, tab != .today {
-                GlassPlusButton {
-                    router.openCapture(voice: false)
-                } longPress: {
-                    router.openCapture(voice: true)
-                }
-                .padding(.trailing, 20)
-                .padding(.bottom, 72)
-            }
-        }
         .overlay {
             if lock.isLocked {
                 lockScreen
@@ -116,8 +105,20 @@ struct RootView: View {
             Tab("Aujourd'hui", systemImage: "sun.max", value: HomeTab.today) { TodayView() }
             Tab("Calendrier", systemImage: "calendar", value: HomeTab.calendar) { MonthView() }
             Tab("Tendances", systemImage: "chart.xyaxis.line", value: HomeTab.trends) { TrendsView() }
+            if #available(iOS 27, *) {
+                Tab("Écrire", systemImage: "square.and.pencil", value: HomeTab.write, role: .prominent) {
+                    Color.clear
+                }
+            }
         }
         .tabBarMinimizeBehavior(.onScrollDown)
+        .onChange(of: tab) { previous, next in
+            guard next == .write else { return }
+            if !lock.isLocked {
+                router.openCapture()
+            }
+            tab = previous == .write ? .today : previous
+        }
         .tint(Palette.ink)
     }
 
@@ -157,5 +158,5 @@ struct RootView: View {
 }
 
 private enum HomeTab: Hashable {
-    case today, calendar, trends
+    case today, calendar, trends, write
 }

@@ -43,6 +43,18 @@ final class DayLog {
         self.day = calendar.startOfDay(for: day)
     }
 
+    /// Durée affichée. Coucher et lever ne comptent que par leur heure :
+    /// 4 h puis 11 h 30, c'est 7 h 30 le matin du bilan, pas la veille du sélecteur.
+    var resolvedSleepHours: Double? {
+        if let night = resolvedSleepNight() { return night.duration / 3600 }
+        return sleepHours
+    }
+
+    func resolvedSleepNight(calendar: Calendar = .current) -> SleepNight? {
+        guard let bedtime, let wakeTime else { return nil }
+        return SleepNight.anchored(bedtime: bedtime, wake: wakeTime, on: day, calendar: calendar)
+    }
+
     /// Bilan déjà enregistré pour le jour logique de `date`, s'il existe.
     /// L'absence de ligne signifie que le bilan n'a pas été fait : des jauges à zéro sont une saisie.
     @MainActor

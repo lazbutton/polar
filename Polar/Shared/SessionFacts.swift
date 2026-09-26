@@ -17,16 +17,13 @@ enum SessionFacts {
         let logs = logs.filter { interval.contains($0.day) }
         var lines: [String] = []
 
-        let nights = logs.compactMap { $0.sleepHours }
+        let nights = logs.compactMap { $0.resolvedSleepHours }
         if !nights.isEmpty {
             let mean = nights.reduce(0, +) / Double(nights.count)
-            lines.append("Sommeil moyen \(French.sleep(mean)) sur \(nights.count) nuits")
+            lines.append("Sommeil moyen \(sleep(mean)) sur \(nights.count) nuits")
         }
 
-        let sleepNights = logs.compactMap { log -> SleepNight? in
-            guard let bedtime = log.bedtime, let wake = log.wakeTime, wake > bedtime else { return nil }
-            return SleepNight(bedtime: bedtime, wake: wake)
-        }
+        let sleepNights = logs.compactMap { $0.resolvedSleepNight(calendar: calendar) }
         if let variability = SleepMetrics.variability(sleepNights, calendar: calendar) {
             lines.append("Variabilité du lever ± \(Int(variability.wake.rounded())) min")
         }
@@ -59,6 +56,11 @@ enum SessionFacts {
         }
 
         return lines
+    }
+
+    private static func sleep(_ hours: Double) -> String {
+        let minutes = Int((hours * 60).rounded())
+        return "\(minutes / 60) h \(String(format: "%02d", minutes % 60))"
     }
 
     /// Derniers scores de chaque questionnaire sur la période, avec le précédent s'il existe.

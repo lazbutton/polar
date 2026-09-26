@@ -32,6 +32,32 @@ struct LogicalDayTests {
     }
 }
 
+struct SleepNightTests {
+    @Test func coucherAQuatreHeuresResteLeMatinDuLever() {
+        let calendar = Paris.calendar
+        let logicalDay = Paris.date(2026, 9, 26, 0, 0)
+        let bed = Paris.date(2026, 9, 25, 4, 0)
+        let wake = Paris.date(2026, 9, 26, 11, 30)
+        let night = SleepNight.anchored(bedtime: bed, wake: wake, on: logicalDay, calendar: calendar)
+
+        #expect(night?.duration == 7.5 * 3600)
+        #expect(calendar.component(.day, from: night!.bedtime) == 26)
+        #expect(calendar.component(.hour, from: night!.bedtime) == 4)
+    }
+
+    @Test func coucherLeSoirResteLaVeille() {
+        let calendar = Paris.calendar
+        let logicalDay = Paris.date(2026, 9, 26, 0, 0)
+        let bed = Paris.date(2026, 9, 26, 23, 0)
+        let wake = Paris.date(2026, 9, 26, 7, 0)
+        let night = SleepNight.anchored(bedtime: bed, wake: wake, on: logicalDay, calendar: calendar)
+
+        #expect(night?.duration == 8 * 3600)
+        #expect(calendar.component(.day, from: night!.bedtime) == 25)
+        #expect(calendar.component(.hour, from: night!.bedtime) == 23)
+    }
+}
+
 @MainActor
 struct DayLogTests {
     @Test func pasDeBilanTantQueRienNEstNote() throws {

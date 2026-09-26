@@ -82,7 +82,7 @@ enum AlertEngine {
         for offset in 0..<span {
             guard let day = calendar.date(byAdding: .day, value: -offset, to: today),
                   let log = logs.first(where: { calendar.isDate($0.day, inSameDayAs: day) }),
-                  let hours = log.sleepHours else { return nil }
+                  let hours = log.resolvedSleepHours else { return nil }
             guard hours < rule.threshold else { return nil }
             nights += 1
         }
@@ -119,8 +119,8 @@ enum AlertEngine {
         logs
             .filter { $0.day <= day.addingTimeInterval(1) }
             .compactMap { log -> (Date, SleepNight)? in
-                guard let bedtime = log.bedtime, let wake = log.wakeTime, wake > bedtime else { return nil }
-                return (log.day, SleepNight(bedtime: bedtime, wake: wake))
+                guard let night = log.resolvedSleepNight(calendar: calendar) else { return nil }
+                return (log.day, night)
             }
             .sorted { $0.0 < $1.0 }
             .map { $0.1 }

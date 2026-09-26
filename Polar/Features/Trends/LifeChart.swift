@@ -46,7 +46,7 @@ struct SleepChart: View {
 
     var body: some View {
         Chart(logs.sorted { $0.day < $1.day }) { log in
-            if let hours = log.sleepHours {
+            if let hours = log.resolvedSleepHours {
                 LineMark(
                     x: .value("Jour", log.day, unit: .day),
                     y: .value("Sommeil", hours)
@@ -56,7 +56,7 @@ struct SleepChart: View {
             if log.intakes?.contains(where: { $0.taken == false }) == true {
                 PointMark(
                     x: .value("Jour", log.day, unit: .day),
-                    y: .value("Repère", log.sleepHours ?? 0)
+                    y: .value("Repère", log.resolvedSleepHours ?? 0)
                 )
                 .foregroundStyle(Palette.inkMuted)
                 .symbolSize(40)
@@ -119,7 +119,7 @@ enum Measure: String, CaseIterable, Identifiable {
 
     func value(in log: DayLog) -> Double? {
         switch self {
-        case .sleep: log.sleepHours
+        case .sleep: log.resolvedSleepHours
         case .elevated: Double(log.elevated)
         case .depressed: Double(log.depressed)
         case .irritability: Double(log.irritability)

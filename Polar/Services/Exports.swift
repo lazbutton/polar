@@ -29,7 +29,7 @@ enum CSVExport {
                 String(log.elevated),
                 String(log.irritability),
                 String(log.anxiety),
-                log.sleepHours.map { String($0) } ?? "",
+                log.resolvedSleepHours.map { String($0) } ?? "",
                 log.note ?? "",
             ].map(csv).joined(separator: ","))
         }
@@ -87,7 +87,7 @@ enum PDFReport {
                                 .frame(width: 70, alignment: .leading)
                             Text("B \(log.depressed)  H \(log.elevated)  I \(log.irritability)  A \(log.anxiety)")
                             Spacer()
-                            Text(log.sleepHours.map(French.sleep) ?? "")
+                            Text(log.resolvedSleepHours.map(French.sleep) ?? "")
                                 .foregroundStyle(Palette.inkMuted)
                         }
                         .font(.caption)

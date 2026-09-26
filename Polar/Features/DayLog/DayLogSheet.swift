@@ -378,11 +378,12 @@ struct DayLogSheet: View {
             therapy = existing.therapySession
             note = existing.note ?? ""
             marks = Set(existing.customMarks)
+            if anchorStoredSleep() { persist() }
         } else {
             if let timing = await HealthService.shared.sleepTiming(for: logicalDay) {
                 bedtime = timing.bedtime
                 wakeTime = timing.wake
-                sleepHours = timing.wake.timeIntervalSince(timing.bedtime) / 3600
+                _ = anchorStoredSleep()
                 sleepFromHealth = true
                 sleepEdited = false
             } else if let hours = await HealthService.shared.sleepHours(for: logicalDay) {
@@ -395,10 +396,25 @@ struct DayLogSheet: View {
         ready = true
     }
 
+    /// Corrige le jour collé au sélecteur : 4 h reste sinon la veille du défaut 23 h.
+    @discardableResult
+    private func anchorStoredSleep() -> Bool {
+        guard let bedtime, let wakeTime, let night = SleepNight.anchored(bedtime: bedtime, wake: wakeTime, on: logicalDay) else { return false }
+        let hours = night.duration / 3600
+        let bedChanged = abs(bedtime.timeIntervalSince(night.bedtime)) > 1
+        let wakeChanged = abs(wakeTime.timeIntervalSince(night.wake)) > 1
+        let hoursChanged = abs((sleepHours - hours) * 3600) > 1
+        if bedChanged { self.bedtime = night.bedtime }
+        if wakeChanged { self.wakeTime = night.wake }
+        if hoursChanged { sleepHours = hours }
+        return bedChanged || wakeChanged || hoursChanged
+    }
+
     private func syncSleepFromTiming() {
-        guard let bedtime, let wakeTime, wakeTime > bedtime else { return }
-        sleepHours = wakeTime.timeIntervalSince(bedtime) / 3600
+        guard bedtime != nil, wakeTime != nil else { return }
+        _ = anchorStoredSleep()
         sleepEdited = true
+        sleepFromHealth = false
     }
 
     private func persist() {

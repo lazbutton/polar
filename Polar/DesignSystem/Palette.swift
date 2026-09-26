@@ -20,6 +20,18 @@ enum French {
         date.formatted(.dateTime.weekday(.wide).day().month(.wide).locale(locale))
     }
 
+    static func weekday(_ date: Date) -> String {
+        date.formatted(.dateTime.weekday(.wide).locale(locale))
+    }
+
+    static func dayNumber(_ date: Date) -> String {
+        date.formatted(.dateTime.day().locale(locale))
+    }
+
+    static func monthName(_ date: Date) -> String {
+        date.formatted(.dateTime.month(.wide).locale(locale))
+    }
+
     static func time(_ date: Date) -> String {
         date.formatted(.dateTime.hour().minute().locale(locale))
     }
